@@ -1,49 +1,55 @@
-
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
+import Logo from "../../components/Logo";
 import { createClient } from "../../lib/supabase";
-import Sidebar from "../../components/sidebar";
 
 type Memory = {
   id: string;
   title: string;
   summary: string | null;
-  content: string | null;
   category: string | null;
   source_type: string;
-  source_url: string | null;
   deadline: string | null;
   is_favorite: boolean;
   created_at: string;
 };
 
-const categories = [
-  "All",
-  "Important",
-  "Document",
-  "Screenshot",
-  "Link",
-  "Voice",
-  "Text",
-  "Other",
-];
-
 export default function MemoriesPage() {
   const supabase = createClient();
 
   const [memories, setMemories] = useState<Memory[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [activeCategory, setActiveCategory] = useState("All");
+  const [filtered, setFiltered] = useState<Memory[]>([]);
   const [search, setSearch] = useState("");
-  const [deletingId, setDeletingId] = useState<string | null>(null);
-  const [editingMemory, setEditingMemory] = useState<Memory | null>(null);
-  const [savingEdit, setSavingEdit] = useState(false);
+  const [category, setCategory] = useState("All");
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     loadMemories();
   }, []);
+
+  useEffect(() => {
+    let result = memories;
+
+    if (search.trim()) {
+      const query = search.toLowerCase();
+
+      result = result.filter(
+        (memory) =>
+          memory.title.toLowerCase().includes(query) ||
+          memory.summary?.toLowerCase().includes(query) ||
+          memory.category?.toLowerCase().includes(query) ||
+          memory.source_type.toLowerCase().includes(query)
+      );
+    }
+
+    if (category !== "All") {
+      result = result.filter((memory) => memory.category === category);
+    }
+
+    setFiltered(result);
+  }, [search, category, memories]);
 
   async function loadMemories() {
     setLoading(true);
@@ -53,555 +59,216 @@ export default function MemoriesPage() {
     } = await supabase.auth.getUser();
 
     if (!user) {
-      setMemories([]);
-      setLoading(false);
+      window.location.href = "/login";
       return;
     }
 
     const { data, error } = await supabase
       .from("memories")
       .select(
-        "id, title, summary, content, category, source_type, source_url, deadline, is_favorite, created_at"
+        "id, title, summary, category, source_type, deadline, is_favorite, created_at"
       )
       .eq("user_id", user.id)
       .order("created_at", { ascending: false });
 
-    if (error) {
-      console.error("Memories error:", error);
-      setMemories([]);
-    } else {
-      setMemories(data || []);
+    if (!error && data) {
+      setMemories(data);
     }
 
     setLoading(false);
   }
 
   async function toggleFavorite(
-    event: React.MouseEvent,
-    memory: Memory
+    id: string,
+    currentValue: boolean
   ) {
-    event.preventDefault();
-    event.stopPropagation();
-
-    const newValue = !memory.is_favorite;
-
-    setMemories((current) =>
-      current.map((item) =>
-        item.id === memory.id
-          ? { ...item, is_favorite: newValue }
-          : item
-      )
-    );
-
     const { error } = await supabase
       .from("memories")
-      .update({ is_favorite: newValue })
-      .eq("id", memory.id);
+      .update({ is_favorite: !currentValue })
+      .eq("id", id);
 
-    if (error) {
-      console.error("Favorite update error:", error);
-
+    if (!error) {
       setMemories((current) =>
-        current.map((item) =>
-          item.id === memory.id
-            ? { ...item, is_favorite: memory.is_favorite }
-            : item
+        current.map((memory) =>
+          memory.id === id
+            ? { ...memory, is_favorite: !currentValue }
+            : memory
         )
       );
     }
   }
 
-  async function deleteMemory(
-    event: React.MouseEvent,
-    memory: Memory
-  ) {
-    event.preventDefault();
-    event.stopPropagation();
-
-    const confirmed = window.confirm(
-      `Delete "${memory.title}"?\n\nThis action cannot be undone.`
-    );
-
-    if (!confirmed) return;
-
-    setDeletingId(memory.id);
-
-    const { error } = await supabase
-      .from("memories")
-      .delete()
-      .eq("id", memory.id);
-
-    if (error) {
-      console.error("Delete error:", error);
-      alert("Unable to delete this memory.");
-    } else {
-      setMemories((current) =>
-        current.filter((item) => item.id !== memory.id)
-      );
-    }
-
-    setDeletingId(null);
-  }
-
-  async function saveEdit() {
-    if (!editingMemory) return;
-
-    if (!editingMemory.title.trim()) {
-      alert("Title cannot be empty.");
-      return;
-    }
-
-    setSavingEdit(true);
-
-    const { data, error } = await supabase
-      .from("memories")
-      .update({
-        title: editingMemory.title.trim(),
-        summary: editingMemory.summary,
-        category: editingMemory.category || "Other",
-      })
-      .eq("id", editingMemory.id)
-      .select(
-        "id, title, summary, content, category, source_type, source_url, deadline, is_favorite, created_at"
+  const categories = [
+    "All",
+    ...Array.from(
+      new Set(
+        memories
+          .map((memory) => memory.category)
+          .filter(Boolean) as string[]
       )
-      .single();
-
-    if (error) {
-      console.error("Edit error:", error);
-      alert("Unable to update this memory.");
-    } else if (data) {
-      setMemories((current) =>
-        current.map((item) =>
-          item.id === data.id ? data : item
-        )
-      );
-
-      setEditingMemory(null);
-    }
-
-    setSavingEdit(false);
-  }
-
-  const filteredMemories = useMemo(() => {
-    let result = [...memories];
-
-    if (activeCategory === "Important") {
-      result = result.filter((memory) => memory.is_favorite);
-    } else if (activeCategory !== "All") {
-      result = result.filter((memory) => {
-        const category = memory.category?.toLowerCase() || "";
-        const source = memory.source_type?.toLowerCase() || "";
-        const selected = activeCategory.toLowerCase();
-
-        return category === selected || source === selected;
-      });
-    }
-
-    if (search.trim()) {
-      const q = search.toLowerCase();
-
-      result = result.filter((memory) =>
-        [
-          memory.title,
-          memory.summary,
-          memory.content,
-          memory.category,
-          memory.source_type,
-        ]
-          .filter(Boolean)
-          .some((value) =>
-            value!.toLowerCase().includes(q)
-          )
-      );
-    }
-
-    return result;
-  }, [memories, activeCategory, search]);
-
-  function formatDate(date: string) {
-    return new Date(date).toLocaleDateString("en-IN", {
-      day: "numeric",
-      month: "short",
-      year: "numeric",
-    });
-  }
-
-  function getSourceIcon(source: string) {
-    const type = source.toLowerCase();
-
-    if (type.includes("pdf")) return "PDF";
-    if (type.includes("screenshot") || type.includes("image"))
-      return "IMG";
-    if (type.includes("voice") || type.includes("audio"))
-      return "VO";
-    if (type.includes("link") || type.includes("url")) return "↗";
-
-    return "TXT";
-  }
-
-  const favoriteCount = memories.filter(
-    (memory) => memory.is_favorite
-  ).length;
+    ),
+  ];
 
   return (
-    <main className="page">
-      <Sidebar />
+    <div className="page">
+      <aside className="sidebar">
+        <div className="logoWrap">
+          <Logo />
+        </div>
 
-      <section className="content">
-        <header className="topbar">
+        <nav>
+          <Link href="/dashboard">⌂</Link>
+          <Link href="/capture">＋</Link>
+          <Link className="active" href="/memories">◉</Link>
+          <Link href="/timeline">◷</Link>
+          <Link href="/reminders">✓</Link>
+        </nav>
+
+        <Link href="/profile" className="profileButton">
+          👤
+        </Link>
+      </aside>
+
+      <main className="main">
+        <header className="header">
           <div>
-            <div className="eyebrow">PERSONAL MEMORY</div>
+            <p className="eyebrow">YOUR INFORMATION</p>
             <h1>Memories</h1>
-          </div>
-
-          <Link href="/capture" className="capture-button">
-            + Capture memory
-          </Link>
-        </header>
-
-        <section className="hero">
-          <div>
-            <span className="hero-label">YOUR MEMORY LIBRARY</span>
-
-            <h2>
-              Everything you saved.
-              <br />
-              <span>Ready when you need it.</span>
-            </h2>
-
-            <p>
-              Keep your captured information organized in one place,
-              searchable whenever you need to find it again.
+            <p className="subtitle">
+              Everything you have captured, organized in one place.
             </p>
           </div>
 
-          <div className="hero-orbit">
-            <div className="orbit-ring ring-one" />
-            <div className="orbit-ring ring-two" />
+          <Link href="/capture" className="captureButton">
+            + Capture
+          </Link>
+        </header>
 
-            <div className="orbit-dot dot-one" />
-            <div className="orbit-dot dot-two" />
-
-            <div className="orbit-center">TM</div>
-          </div>
-        </section>
-
-        <div className="stats">
-          <div className="stat-card">
-            <span>TOTAL MEMORIES</span>
-            <strong>{memories.length}</strong>
-            <p>Saved to your library</p>
-          </div>
-
-          <div className="stat-card">
-            <span>IMPORTANT</span>
-            <strong>{favoriteCount}</strong>
-            <p>Marked as important</p>
-          </div>
-
-          <div className="stat-card">
-            <span>SHOWING</span>
-            <strong>{filteredMemories.length}</strong>
-            <p>Matching your current view</p>
-          </div>
-        </div>
-
-        <section className="section search-section">
-          <div className="section-heading">
-            <div>
-              <span>FIND A MEMORY</span>
-              <h2>Search your library</h2>
-            </div>
-          </div>
-
-          <div className="search-box">
-            <span className="search-icon">⌕</span>
-
+        <section className="toolbar">
+          <div className="searchBox">
+            <span>⌕</span>
             <input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search titles, content, categories..."
+              placeholder="Search your memories..."
             />
-
-            {search && (
-              <button
-                className="clear-search"
-                onClick={() => setSearch("")}
-              >
-                ×
-              </button>
-            )}
-          </div>
-        </section>
-
-        <section className="section filter-section">
-          <div className="section-heading">
-            <div>
-              <span>ORGANIZE</span>
-              <h2>Browse by type</h2>
-            </div>
-
-            <div className="count">
-              {filteredMemories.length}
-            </div>
           </div>
 
           <div className="filters">
-            {categories.map((category) => (
+            {categories.map((item) => (
               <button
-                key={category}
-                className={
-                  activeCategory === category
-                    ? "filter active"
-                    : "filter"
-                }
-                onClick={() => setActiveCategory(category)}
+                key={item}
+                className={category === item ? "selected" : ""}
+                onClick={() => setCategory(item)}
               >
-                {category}
+                {item}
               </button>
             ))}
           </div>
         </section>
 
-        <section className="section memory-section">
-          {loading ? (
-            <div className="state">
-              <div className="spinner" />
-              <p>Loading your memories...</p>
-            </div>
-          ) : filteredMemories.length === 0 ? (
-            <div className="state empty">
-              <div className="empty-icon">▣</div>
+        <div className="stats">
+          <div>
+            <strong>{memories.length}</strong>
+            <span>Total memories</span>
+          </div>
 
-              <h3>
-                {memories.length === 0
-                  ? "No memories yet"
-                  : "No memories match this view"}
-              </h3>
+          <div>
+            <strong>
+              {memories.filter((m) => m.is_favorite).length}
+            </strong>
+            <span>Favorites</span>
+          </div>
 
-              <p>
-                {memories.length === 0
-                  ? "Capture information from your everyday life and TraceMind will keep it organized."
-                  : "Try another category or search term."}
-              </p>
-
-              {memories.length === 0 && (
-                <Link
-                  href="/capture"
-                  className="empty-button"
-                >
-                  Capture something
-                </Link>
-              )}
-            </div>
-          ) : (
-            <>
-              <div className="section-heading">
-                <div>
-                  <span>
-                    {activeCategory === "All"
-                      ? "ALL MEMORIES"
-                      : activeCategory.toUpperCase()}
-                  </span>
-
-                  <h2>
-                    {filteredMemories.length}{" "}
-                    {filteredMemories.length === 1
-                      ? "memory"
-                      : "memories"}
-                  </h2>
-                </div>
-              </div>
-
-              <div className="memory-grid">
-                {filteredMemories.map((memory) => (
-                  <Link
-                    href={`/memories/${memory.id}`}
-                    key={memory.id}
-                    className="memory-card"
-                  >
-                    <div className="card-top">
-                      <div className="source-icon">
-                        {getSourceIcon(memory.source_type)}
-                      </div>
-
-                      <div className="card-actions">
-                        <button
-                          className={
-                            memory.is_favorite
-                              ? "icon-button favorite active"
-                              : "icon-button"
-                          }
-                          title={
-                            memory.is_favorite
-                              ? "Remove from favorites"
-                              : "Add to favorites"
-                          }
-                          onClick={(e) =>
-                            toggleFavorite(e, memory)
-                          }
-                        >
-                          {memory.is_favorite ? "★" : "☆"}
-                        </button>
-
-                        <button
-                          className="icon-button"
-                          title="Edit memory"
-                          onClick={(e) => {
-                            e.preventDefault();
-                            e.stopPropagation();
-                            setEditingMemory({
-                              ...memory,
-                            });
-                          }}
-                        >
-                          ✎
-                        </button>
-
-                        <button
-                          className="icon-button delete-button"
-                          title="Delete memory"
-                          disabled={
-                            deletingId === memory.id
-                          }
-                          onClick={(e) =>
-                            deleteMemory(e, memory)
-                          }
-                        >
-                          {deletingId === memory.id
-                            ? "..."
-                            : "×"}
-                        </button>
-                      </div>
-                    </div>
-
-                    <div className="card-content">
-                      <span className="category">
-                        {memory.category || "Other"}
-                      </span>
-
-                      <h3>{memory.title}</h3>
-
-                      <p>
-                        {memory.summary ||
-                          memory.content ||
-                          "This memory doesn't have a description yet."}
-                      </p>
-                    </div>
-
-                    <div className="card-bottom">
-                      <span>
-                        {formatDate(memory.created_at)}
-                      </span>
-
-                      {memory.deadline && (
-                        <span className="deadline">
-                          Due {formatDate(memory.deadline)}
-                        </span>
-                      )}
-                    </div>
-                  </Link>
-                ))}
-              </div>
-            </>
-          )}
-        </section>
-      </section>
-
-      {editingMemory && (
-        <div
-          className="modal-backdrop"
-          onClick={() => setEditingMemory(null)}
-        >
-          <div
-            className="edit-modal"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="modal-header">
-              <div>
-                <span className="modal-label">MEMORY</span>
-                <h2>Edit memory</h2>
-              </div>
-
-              <button
-                className="modal-close"
-                onClick={() => setEditingMemory(null)}
-              >
-                ×
-              </button>
-            </div>
-
-            <label>
-              TITLE
-
-              <input
-                value={editingMemory.title}
-                onChange={(e) =>
-                  setEditingMemory({
-                    ...editingMemory,
-                    title: e.target.value,
-                  })
-                }
-              />
-            </label>
-
-            <label>
-              SUMMARY
-
-              <textarea
-                value={editingMemory.summary || ""}
-                onChange={(e) =>
-                  setEditingMemory({
-                    ...editingMemory,
-                    summary: e.target.value,
-                  })
-                }
-                rows={4}
-              />
-            </label>
-
-            <label>
-              CATEGORY
-
-              <select
-                value={editingMemory.category || "Other"}
-                onChange={(e) =>
-                  setEditingMemory({
-                    ...editingMemory,
-                    category: e.target.value,
-                  })
-                }
-              >
-                <option>Document</option>
-                <option>Screenshot</option>
-                <option>Link</option>
-                <option>Voice</option>
-                <option>Text</option>
-                <option>Other</option>
-              </select>
-            </label>
-
-            <div className="modal-actions">
-              <button
-                className="cancel-button"
-                onClick={() => setEditingMemory(null)}
-              >
-                Cancel
-              </button>
-
-              <button
-                className="save-button"
-                disabled={savingEdit}
-                onClick={saveEdit}
-              >
-                {savingEdit
-                  ? "Saving..."
-                  : "Save changes"}
-              </button>
-            </div>
+          <div>
+            <strong>{filtered.length}</strong>
+            <span>Showing</span>
           </div>
         </div>
-      )}
+
+        {loading ? (
+          <div className="empty">
+            <div className="loader" />
+            <p>Loading your memories...</p>
+          </div>
+        ) : filtered.length === 0 ? (
+          <div className="empty">
+            <div className="emptyIcon">◌</div>
+
+            <h2>
+              {memories.length === 0
+                ? "Your memory space is empty"
+                : "No memories found"}
+            </h2>
+
+            <p>
+              {memories.length === 0
+                ? "Capture something you want to remember and it will appear here."
+                : "Try a different search or category."}
+            </p>
+
+            {memories.length === 0 && (
+              <Link href="/capture" className="emptyButton">
+                Capture your first memory
+              </Link>
+            )}
+          </div>
+        ) : (
+          <section className="grid">
+            {filtered.map((memory) => (
+              <article className="card" key={memory.id}>
+                <div className="cardTop">
+                  <span className="source">
+                    {memory.source_type}
+                  </span>
+
+                  <button
+                    className={
+                      memory.is_favorite
+                        ? "favorite active"
+                        : "favorite"
+                    }
+                    onClick={() =>
+                      toggleFavorite(
+                        memory.id,
+                        memory.is_favorite
+                      )
+                    }
+                  >
+                    {memory.is_favorite ? "★" : "☆"}
+                  </button>
+                </div>
+
+                <Link href={`/memories/${memory.id}`}>
+                  <h2>{memory.title}</h2>
+
+                  <p>
+                    {memory.summary ||
+                      "No summary available yet."}
+                  </p>
+
+                  <div className="cardBottom">
+                    <span>
+                      {memory.category || "Other"}
+                    </span>
+
+                    <span>
+                      {formatDate(memory.created_at)}
+                    </span>
+                  </div>
+
+                  {memory.deadline && (
+                    <div className="deadline">
+                      <span>◷</span>
+                      Deadline: {formatDate(memory.deadline)}
+                    </div>
+                  )}
+                </Link>
+              </article>
+            ))}
+          </section>
+        )}
+      </main>
 
       <style jsx>{`
         * {
@@ -610,501 +277,314 @@ export default function MemoriesPage() {
 
         .page {
           min-height: 100vh;
-          background: #f7f8fa;
-          color: #17191e;
-          font-family:
-            Inter,
-            ui-sans-serif,
-            system-ui,
-            -apple-system,
-            BlinkMacSystemFont,
-            "Segoe UI",
-            sans-serif;
+          background:
+            radial-gradient(
+              circle at 70% 0%,
+              rgba(99, 102, 241, 0.08),
+              transparent 32%
+            ),
+            #f8fafc;
+          color: #111827;
         }
 
-        .content {
-          margin-left: 238px;
-          padding: 34px 46px 70px;
-          max-width: 1500px;
-        }
-
-        .topbar {
+        .sidebar {
+          position: fixed;
+          left: 0;
+          top: 0;
+          width: 82px;
+          height: 100vh;
+          background: rgba(255, 255, 255, 0.92);
+          border-right: 1px solid #e5e7eb;
           display: flex;
-          justify-content: space-between;
+          flex-direction: column;
           align-items: center;
-          margin-bottom: 28px;
+          z-index: 20;
+          backdrop-filter: blur(16px);
         }
 
-        .eyebrow {
-          color: #9b9ea5;
-          font-size: 10px;
-          font-weight: 750;
-          letter-spacing: 1.4px;
-          margin-bottom: 5px;
+        .logoWrap {
+          padding-top: 24px;
         }
 
-        .topbar h1 {
-          margin: 0;
-          font-size: 30px;
-          letter-spacing: -1px;
-        }
-
-        .capture-button {
-          background: #17191e;
-          color: white;
-          text-decoration: none;
-          padding: 11px 17px;
-          border-radius: 10px;
-          font-size: 13px;
-          font-weight: 650;
-        }
-
-        .capture-button:hover {
-          background: #292c33;
-        }
-
-        .hero {
-          min-height: 255px;
-          border-radius: 24px;
-          background: #17191e;
-          color: white;
-          padding: 38px 42px;
+        nav {
           display: flex;
-          justify-content: space-between;
-          align-items: center;
-          overflow: hidden;
-          position: relative;
+          flex-direction: column;
+          gap: 12px;
+          margin-top: 150px;
         }
 
-        .hero-label {
-          color: #9ea2aa;
-          font-size: 10px;
-          letter-spacing: 1.7px;
-          font-weight: 750;
-        }
-
-        .hero h2 {
-          margin: 12px 0;
-          font-size: clamp(30px, 4vw, 48px);
-          line-height: 1.03;
-          letter-spacing: -2px;
-          max-width: 680px;
-        }
-
-        .hero h2 span {
-          color: #a9adb5;
-        }
-
-        .hero p {
-          color: #a9adb5;
-          max-width: 560px;
-          font-size: 14px;
-          line-height: 1.7;
-          margin: 0;
-        }
-
-        .hero-orbit {
-          width: 190px;
-          height: 190px;
-          position: relative;
-          margin-right: 45px;
-          flex-shrink: 0;
-        }
-
-        .orbit-ring {
-          position: absolute;
-          inset: 0;
-          border: 1px solid #383b42;
-          border-radius: 50%;
-        }
-
-        .ring-two {
-          inset: 27px;
-          border-color: #454850;
-        }
-
-        .orbit-center {
-          position: absolute;
-          width: 55px;
-          height: 55px;
-          left: 50%;
-          top: 50%;
-          transform: translate(-50%, -50%);
-          border-radius: 50%;
-          background: #fff;
-          color: #17191e;
-          display: grid;
-          place-items: center;
-          font-size: 12px;
-          font-weight: 800;
-        }
-
-        .orbit-dot {
-          position: absolute;
-          width: 9px;
-          height: 9px;
-          background: white;
-          border-radius: 50%;
-        }
-
-        .dot-one {
-          top: 11px;
-          left: 93px;
-        }
-
-        .dot-two {
-          bottom: 22px;
-          right: 8px;
-        }
-
-        .stats {
-          display: grid;
-          grid-template-columns: repeat(3, 1fr);
-          gap: 14px;
-          margin: 18px 0 42px;
-        }
-
-        .stat-card {
-          background: #fff;
-          border: 1px solid #e8e9ec;
-          border-radius: 16px;
-          padding: 20px;
-        }
-
-        .stat-card span {
-          color: #9b9ea5;
-          font-size: 9px;
-          font-weight: 750;
-          letter-spacing: 1.4px;
-        }
-
-        .stat-card strong {
-          display: block;
-          font-size: 28px;
-          margin-top: 7px;
-          letter-spacing: -1px;
-        }
-
-        .stat-card p {
-          color: #92959c;
-          font-size: 11px;
-          margin: 3px 0 0;
-        }
-
-        .section {
-          margin-top: 38px;
-        }
-
-        .search-section {
-          margin-top: 0;
-        }
-
-        .section-heading {
-          display: flex;
-          justify-content: space-between;
-          align-items: end;
-          margin-bottom: 15px;
-        }
-
-        .section-heading > div > span {
-          color: #9b9ea5;
-          font-size: 9px;
-          font-weight: 750;
-          letter-spacing: 1.4px;
-        }
-
-        .section-heading h2 {
-          margin: 5px 0 0;
-          font-size: 21px;
-          letter-spacing: -0.5px;
-        }
-
-        .count {
-          width: 29px;
-          height: 29px;
-          border-radius: 9px;
-          background: #e9eaed;
-          display: grid;
-          place-items: center;
-          font-size: 11px;
-          font-weight: 700;
-        }
-
-        .search-box {
-          height: 52px;
-          background: #fff;
-          border: 1px solid #e7e8eb;
+        nav a,
+        .profileButton {
+          width: 46px;
+          height: 46px;
           border-radius: 14px;
           display: flex;
           align-items: center;
-          padding: 0 15px;
-          transition: 0.2s ease;
-        }
-
-        .search-box:focus-within {
-          border-color: #b9bbc0;
-          box-shadow: 0 0 0 3px rgba(23, 25, 30, 0.035);
-        }
-
-        .search-icon {
-          color: #8d9097;
+          justify-content: center;
+          text-decoration: none;
+          color: #64748b;
           font-size: 20px;
+          transition: 0.2s;
         }
 
-        .search-box input {
+        nav a:hover,
+        nav a.active {
+          background: #111827;
+          color: white;
+        }
+
+        .profileButton {
+          margin-top: auto;
+          margin-bottom: 24px;
+          background: #f1f5f9;
+        }
+
+        .main {
+          margin-left: 82px;
+          padding: 55px 7%;
+          max-width: 1500px;
+        }
+
+        .header {
+          display: flex;
+          justify-content: space-between;
+          align-items: flex-end;
+          gap: 30px;
+        }
+
+        .eyebrow {
+          font-size: 12px;
+          font-weight: 700;
+          letter-spacing: 0.16em;
+          color: #6366f1;
+          margin: 0 0 10px;
+        }
+
+        h1 {
+          font-size: clamp(36px, 5vw, 58px);
+          letter-spacing: -0.05em;
+          margin: 0;
+        }
+
+        .subtitle {
+          color: #64748b;
+          margin-top: 12px;
+          font-size: 16px;
+        }
+
+        .captureButton,
+        .emptyButton {
+          background: #111827;
+          color: white;
+          text-decoration: none;
+          padding: 13px 20px;
+          border-radius: 13px;
+          font-weight: 600;
+        }
+
+        .toolbar {
+          margin-top: 45px;
+          display: flex;
+          gap: 18px;
+          flex-wrap: wrap;
+          align-items: center;
+        }
+
+        .searchBox {
+          background: white;
+          border: 1px solid #e2e8f0;
+          border-radius: 15px;
+          height: 50px;
+          display: flex;
+          align-items: center;
+          padding: 0 16px;
           flex: 1;
+          min-width: 260px;
+        }
+
+        .searchBox span {
+          font-size: 24px;
+          color: #94a3b8;
+          margin-right: 10px;
+        }
+
+        .searchBox input {
           border: 0;
-          outline: none;
+          outline: 0;
+          width: 100%;
+          font-size: 15px;
           background: transparent;
-          padding: 0 11px;
-          color: #17191e;
-          font-size: 13px;
-          font-family: inherit;
-        }
-
-        .search-box input::placeholder {
-          color: #b0b2b7;
-        }
-
-        .clear-search {
-          width: 29px;
-          height: 29px;
-          border: 0;
-          border-radius: 8px;
-          background: #f0f1f3;
-          color: #777b83;
-          cursor: pointer;
-          font-size: 17px;
-        }
-
-        .filter-section {
-          margin-top: 28px;
         }
 
         .filters {
           display: flex;
-          gap: 7px;
-          overflow-x: auto;
-          scrollbar-width: none;
-          padding-bottom: 2px;
+          gap: 8px;
+          flex-wrap: wrap;
         }
 
-        .filters::-webkit-scrollbar {
-          display: none;
-        }
-
-        .filter {
-          flex-shrink: 0;
-          border: 1px solid #e3e4e7;
-          background: #fff;
-          color: #777b83;
-          border-radius: 9px;
-          padding: 9px 13px;
+        .filters button {
+          border: 1px solid #e2e8f0;
+          background: white;
+          padding: 10px 14px;
+          border-radius: 11px;
           cursor: pointer;
-          font-size: 10px;
-          font-weight: 650;
-          font-family: inherit;
-          transition: 0.2s ease;
+          color: #64748b;
         }
 
-        .filter:hover {
-          border-color: #c9cbd0;
-          color: #17191e;
-        }
-
-        .filter.active {
-          background: #17191e;
-          border-color: #17191e;
+        .filters button.selected {
+          background: #111827;
           color: white;
+          border-color: #111827;
         }
 
-        .memory-section {
-          margin-top: 42px;
-        }
-
-        .memory-grid {
-          display: grid;
-          grid-template-columns: repeat(3, 1fr);
-          gap: 13px;
-        }
-
-        .memory-card {
-          min-height: 235px;
-          padding: 18px;
-          background: #fff;
-          border: 1px solid #e7e8eb;
-          border-radius: 15px;
-          text-decoration: none;
-          color: #17191e;
+        .stats {
           display: flex;
-          flex-direction: column;
-          transition: 0.2s ease;
+          gap: 15px;
+          margin: 28px 0;
         }
 
-        .memory-card:hover {
+        .stats div {
+          background: white;
+          border: 1px solid #e5e7eb;
+          border-radius: 15px;
+          padding: 16px 22px;
+          min-width: 130px;
+        }
+
+        .stats strong {
+          display: block;
+          font-size: 25px;
+        }
+
+        .stats span {
+          font-size: 12px;
+          color: #64748b;
+        }
+
+        .grid {
+          display: grid;
+          grid-template-columns: repeat(
+            auto-fill,
+            minmax(270px, 1fr)
+          );
+          gap: 18px;
+        }
+
+        .card {
+          background: rgba(255, 255, 255, 0.92);
+          border: 1px solid #e5e7eb;
+          border-radius: 20px;
+          padding: 21px;
+          transition: 0.2s;
+        }
+
+        .card:hover {
           transform: translateY(-3px);
-          border-color: #d5d7dc;
-          box-shadow: 0 15px 35px rgba(20, 24, 31, 0.07);
+          border-color: #c7d2fe;
+          box-shadow: 0 14px 35px rgba(15, 23, 42, 0.07);
         }
 
-        .card-top {
+        .card a {
+          color: inherit;
+          text-decoration: none;
+        }
+
+        .cardTop {
           display: flex;
           justify-content: space-between;
-          align-items: flex-start;
-        }
-
-        .source-icon {
-          width: 39px;
-          height: 39px;
-          border-radius: 11px;
-          background: #f0f1f3;
-          color: #62666e;
-          display: grid;
-          place-items: center;
-          font-size: 9px;
-          font-weight: 800;
-        }
-
-        .card-actions {
-          display: flex;
-          gap: 4px;
           align-items: center;
         }
 
-        .icon-button {
-          width: 29px;
-          height: 29px;
+        .source {
+          font-size: 11px;
+          font-weight: 700;
+          color: #6366f1;
+          background: #eef2ff;
+          padding: 6px 9px;
+          border-radius: 8px;
+        }
+
+        .favorite {
           border: 0;
           background: transparent;
-          border-radius: 8px;
-          color: #999ca4;
+          font-size: 22px;
+          color: #cbd5e1;
           cursor: pointer;
+        }
+
+        .favorite.active {
+          color: #f59e0b;
+        }
+
+        .card h2 {
+          font-size: 19px;
+          margin: 25px 0 9px;
+          line-height: 1.3;
+        }
+
+        .card p {
+          color: #64748b;
           font-size: 14px;
-          font-family: inherit;
-          transition: 0.15s ease;
-        }
-
-        .icon-button:hover {
-          background: #f0f1f3;
-          color: #17191e;
-        }
-
-        .icon-button.favorite.active {
-          color: #17191e;
-        }
-
-        .delete-button:hover {
-          color: #9e2b25;
-          background: #fdf0ef;
-        }
-
-        .card-content {
-          flex: 1;
-          padding-top: 18px;
-        }
-
-        .category {
-          display: inline-block;
-          margin-bottom: 8px;
-          color: #8c9098;
-          font-size: 9px;
-          font-weight: 750;
-          letter-spacing: 0.1em;
-          text-transform: uppercase;
-        }
-
-        .card-content h3 {
-          margin: 0;
-          font-size: 15px;
-          line-height: 1.35;
-          display: -webkit-box;
-          -webkit-line-clamp: 2;
-          -webkit-box-orient: vertical;
-          overflow: hidden;
-        }
-
-        .card-content p {
-          margin: 8px 0 0;
-          color: #858991;
-          font-size: 11px;
           line-height: 1.6;
-          display: -webkit-box;
-          -webkit-line-clamp: 3;
-          -webkit-box-orient: vertical;
-          overflow: hidden;
+          min-height: 45px;
         }
 
-        .card-bottom {
-          border-top: 1px solid #f0f1f3;
-          padding-top: 13px;
+        .cardBottom {
           display: flex;
           justify-content: space-between;
           gap: 10px;
-          color: #a0a3aa;
-          font-size: 10px;
+          margin-top: 20px;
+          padding-top: 15px;
+          border-top: 1px solid #f1f5f9;
+          color: #64748b;
+          font-size: 12px;
         }
 
         .deadline {
-          color: #686c74;
-          font-weight: 650;
+          margin-top: 12px;
+          padding: 9px 10px;
+          background: #fff7ed;
+          color: #c2410c;
+          border-radius: 9px;
+          font-size: 12px;
         }
 
-        .state {
-          min-height: 260px;
-          border: 1px dashed #d9dce1;
-          border-radius: 15px;
-          background: #fff;
+        .empty {
+          min-height: 400px;
           display: flex;
           flex-direction: column;
           align-items: center;
           justify-content: center;
-          color: #999da5;
           text-align: center;
-          padding: 30px;
+          color: #64748b;
         }
 
-        .state p {
-          font-size: 12px;
-          max-width: 400px;
+        .emptyIcon {
+          font-size: 60px;
+          color: #cbd5e1;
+        }
+
+        .empty h2 {
+          color: #111827;
+          margin: 15px 0 5px;
+        }
+
+        .empty p {
+          max-width: 450px;
           line-height: 1.6;
         }
 
-        .empty-icon {
-          width: 52px;
-          height: 52px;
-          margin-bottom: 12px;
+        .emptyButton {
+          margin-top: 20px;
+        }
+
+        .loader {
+          width: 30px;
+          height: 30px;
+          border: 3px solid #e2e8f0;
+          border-top-color: #111827;
           border-radius: 50%;
-          background: #f0f1f3;
-          display: grid;
-          place-items: center;
-          color: #777b83;
-          font-size: 20px;
-        }
-
-        .state h3 {
-          margin: 0;
-          color: #282b31;
-          font-size: 15px;
-        }
-
-        .empty-button {
-          margin-top: 8px;
-          padding: 10px 15px;
-          border-radius: 9px;
-          background: #17191e;
-          color: white;
-          text-decoration: none;
-          font-size: 11px;
-          font-weight: 700;
-        }
-
-        .spinner {
-          width: 25px;
-          height: 25px;
-          border: 2px solid #e3e5e8;
-          border-top-color: #24272d;
-          border-radius: 50%;
-          animation: spin 0.7s linear infinite;
+          animation: spin 0.8s linear infinite;
         }
 
         @keyframes spin {
@@ -1113,220 +593,46 @@ export default function MemoriesPage() {
           }
         }
 
-        .modal-backdrop {
-          position: fixed;
-          inset: 0;
-          z-index: 10000;
-          background: rgba(15, 17, 21, 0.45);
-          backdrop-filter: blur(5px);
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          padding: 20px;
-        }
-
-        .edit-modal {
-          width: min(520px, 100%);
-          background: #fff;
-          border-radius: 18px;
-          padding: 25px;
-          box-shadow: 0 25px 70px rgba(0, 0, 0, 0.2);
-        }
-
-        .modal-header {
-          display: flex;
-          justify-content: space-between;
-          align-items: flex-start;
-          margin-bottom: 22px;
-        }
-
-        .modal-label {
-          color: #9b9ea5;
-          font-size: 9px;
-          font-weight: 750;
-          letter-spacing: 1.4px;
-        }
-
-        .modal-header h2 {
-          margin: 5px 0 0;
-          font-size: 23px;
-          letter-spacing: -0.7px;
-        }
-
-        .modal-close {
-          width: 34px;
-          height: 34px;
-          border: 0;
-          border-radius: 9px;
-          background: #f0f1f3;
-          color: #777b83;
-          font-size: 20px;
-          cursor: pointer;
-        }
-
-        .modal-close:hover {
-          background: #e7e8eb;
-          color: #17191e;
-        }
-
-        .edit-modal label {
-          display: block;
-          margin-top: 16px;
-          color: #777b83;
-          font-size: 9px;
-          font-weight: 750;
-          letter-spacing: 1.2px;
-        }
-
-        .edit-modal input,
-        .edit-modal textarea,
-        .edit-modal select {
-          width: 100%;
-          margin-top: 8px;
-          padding: 12px;
-          border: 1px solid #dedfe3;
-          border-radius: 10px;
-          outline: none;
-          background: white;
-          color: #17191e;
-          font-family: inherit;
-          font-size: 12px;
-        }
-
-        .edit-modal input:focus,
-        .edit-modal textarea:focus,
-        .edit-modal select:focus {
-          border-color: #999ca2;
-          box-shadow: 0 0 0 3px rgba(23, 25, 30, 0.04);
-        }
-
-        .edit-modal textarea {
-          resize: vertical;
-        }
-
-        .modal-actions {
-          display: flex;
-          justify-content: flex-end;
-          gap: 8px;
-          margin-top: 23px;
-        }
-
-        .cancel-button,
-        .save-button {
-          border: 0;
-          border-radius: 9px;
-          padding: 10px 15px;
-          cursor: pointer;
-          font-size: 11px;
-          font-weight: 700;
-          font-family: inherit;
-        }
-
-        .cancel-button {
-          background: #f0f1f3;
-          color: #555961;
-        }
-
-        .cancel-button:hover {
-          background: #e7e8eb;
-        }
-
-        .save-button {
-          background: #17191e;
-          color: white;
-        }
-
-        .save-button:hover:not(:disabled) {
-          background: #292c33;
-        }
-
-        .save-button:disabled {
-          opacity: 0.5;
-          cursor: not-allowed;
-        }
-
-        @media (max-width: 1050px) {
-          .memory-grid {
-            grid-template-columns: repeat(2, 1fr);
-          }
-        }
-
-        @media (max-width: 900px) {
-          .content {
-            margin-left: 76px;
-            padding: 30px 28px 60px;
+        @media (max-width: 700px) {
+          .sidebar {
+            width: 65px;
           }
 
-          .hero-orbit {
-            margin-right: 10px;
-          }
-        }
-
-        @media (max-width: 650px) {
-          .content {
-            margin-left: 68px;
-            padding: 22px 15px 50px;
+          .main {
+            margin-left: 65px;
+            padding: 35px 18px;
           }
 
-          .topbar {
-            margin-bottom: 20px;
+          .header {
+            align-items: flex-start;
+            flex-direction: column;
           }
 
-          .topbar h1 {
-            font-size: 25px;
-          }
-
-          .capture-button {
-            padding: 9px 11px;
-            font-size: 11px;
-          }
-
-          .hero {
-            min-height: auto;
-            padding: 29px 25px;
-          }
-
-          .hero h2 {
-            font-size: 31px;
-            letter-spacing: -1.4px;
-          }
-
-          .hero p {
-            font-size: 12px;
-          }
-
-          .hero-orbit {
-            display: none;
+          .toolbar {
+            margin-top: 30px;
           }
 
           .stats {
-            grid-template-columns: 1fr;
-            gap: 8px;
-            margin-bottom: 35px;
+            overflow-x: auto;
           }
 
-          .stat-card {
-            padding: 15px 17px;
+          nav {
+            margin-top: 100px;
           }
 
-          .stat-card strong {
-            font-size: 23px;
-          }
-
-          .memory-grid {
-            grid-template-columns: 1fr;
-          }
-
-          .memory-card {
-            min-height: 220px;
-          }
-
-          .edit-modal {
-            padding: 20px;
+          .stats div {
+            min-width: 110px;
           }
         }
       `}</style>
-    </main>
+    </div>
   );
 }
 
+function formatDate(date: string) {
+  return new Date(date).toLocaleDateString("en-IN", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  });
+}

@@ -1,6 +1,8 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
+import Logo from "../../components/Logo";
 import { createClient } from "../../lib/supabase";
 
 type Memory = {
@@ -8,9 +10,9 @@ type Memory = {
   title: string;
   summary: string | null;
   category: string | null;
-  source_type: string | null;
-  source_url: string | null;
+  source_type: string;
   created_at: string;
+  deadline: string | null;
   is_favorite: boolean;
 };
 
@@ -18,303 +20,301 @@ export default function SearchPage() {
   const supabase = createClient();
 
   const [memories, setMemories] = useState<Memory[]>([]);
-  const [results, setResults] = useState<Memory[]>([]);
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    async function loadMemories() {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-
-      if (!user) {
-        setLoading(false);
-        return;
-      }
-
-      const { data, error } = await supabase
-        .from("memories")
-        .select(
-          "id,title,summary,category,source_type,source_url,created_at,is_favorite"
-        )
-        .eq("user_id", user.id)
-        .order("created_at", { ascending: false });
-
-      if (!error) {
-        const memoryData = (data as Memory[]) || [];
-        setMemories(memoryData);
-        setResults(memoryData);
-      }
-
-      setLoading(false);
-    }
-
     loadMemories();
   }, []);
 
-  useEffect(() => {
-    const search = query.trim().toLowerCase();
+  async function loadMemories() {
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
 
-    if (!search) {
-      setResults(memories);
+    if (!user) {
+      setLoading(false);
       return;
     }
 
-    const filtered = memories.filter((memory) => {
-      return (
-        memory.title?.toLowerCase().includes(search) ||
-        memory.summary?.toLowerCase().includes(search) ||
-        memory.category?.toLowerCase().includes(search) ||
-        memory.source_type?.toLowerCase().includes(search)
-      );
-    });
+    const { data, error } = await supabase
+      .from("memories")
+      .select(
+        "id,title,summary,category,source_type,created_at,deadline,is_favorite"
+      )
+      .eq("user_id", user.id)
+      .order("created_at", { ascending: false });
 
-    setResults(filtered);
-  }, [query, memories]);
+    if (!error) {
+      setMemories(data || []);
+    }
+
+    setLoading(false);
+  }
+
+  const filteredMemories = memories.filter((memory) => {
+    const text = `
+      ${memory.title}
+      ${memory.summary || ""}
+      ${memory.category || ""}
+      ${memory.source_type}
+    `.toLowerCase();
+
+    return text.includes(query.toLowerCase());
+  });
+
+  const sourceIcon = (type: string) => {
+    const value = type.toLowerCase();
+
+    if (value.includes("pdf")) return "▤";
+    if (value.includes("image") || value.includes("screenshot")) return "▧";
+    if (value.includes("voice")) return "◉";
+    if (value.includes("link") || value.includes("web")) return "↗";
+
+    return "✦";
+  };
 
   return (
     <main className="page">
+
       {/* SIDEBAR */}
+
       <aside className="sidebar">
-        <div className="logo">
-          <div className="logo-mark">T</div>
-          <span>TraceMind</span>
-        </div>
 
-        <div className="workspace-label">WORKSPACE</div>
+        <Link href="/dashboard" className="logo">
+          <Logo />
+        </Link>
 
-        <nav className="nav">
-          <a href="/dashboard">
+        <nav>
+
+          {/* DASHBOARD */}
+          <Link href="/dashboard" className="nav">
             <span>⌂</span>
-            Home
-          </a>
+            <label>Dashboard</label>
+          </Link>
 
-          <a href="/search" className="active">
-            <span>⌕</span>
-            Search
-          </a>
-
-          <a href="/capture">
+          {/* CAPTURE */}
+          <Link href="/capture" className="nav">
             <span>＋</span>
-            Capture
-          </a>
+            <label>Capture</label>
+          </Link>
 
-          <a href="/memories">
+          {/* MEMORIES */}
+          <Link href="/memories" className="nav">
             <span>▣</span>
-            Memories
-          </a>
+            <label>Memories</label>
+          </Link>
 
-          <a href="/reminders">
+          {/* TIMELINE */}
+          <Link href="/timeline" className="nav">
+            <span>◇</span>
+            <label>Timeline</label>
+          </Link>
+
+          {/* REMINDERS */}
+          <Link href="/reminders" className="nav">
             <span>◷</span>
-            Reminders
-          </a>
+            <label>Reminders</label>
+          </Link>
+
         </nav>
 
-        <a href="/profile" className="account">
-          <div className="avatar">M</div>
-
-          <div>
-            <strong>My Account</strong>
-            <small>Profile & settings</small>
-          </div>
-        </a>
       </aside>
 
-      {/* CONTENT */}
-      <section className="content">
-        <header className="topbar">
+      {/* MAIN */}
+
+      <div className="main">
+
+        <header>
+
           <div>
-            <div className="eyebrow">PERSONAL MEMORY</div>
+            <p>PERSONAL MEMORY</p>
             <h1>Search</h1>
           </div>
 
-          <a href="/capture" className="capture-button">
+          <Link href="/capture" className="capture">
             + Capture memory
-          </a>
+          </Link>
+
         </header>
 
-        {/* HERO */}
+        {/* SEARCH HERO */}
+
         <section className="hero">
-          <div className="hero-copy">
-            <span className="hero-label">MEMORY SEARCH</span>
 
-            <h2>
-              Find what you remember.
-              <br />
-              <span>Without remembering where.</span>
-            </h2>
+          <p className="label">FIND A MEMORY</p>
 
-            <p>
-              Search across the memories you have saved in TraceMind. Use a
-              word, topic, category, or source type.
-            </p>
+          <h2>
+            What are you
+            <br />
+            trying to remember?
+          </h2>
 
-            <div className="search-box">
-              <span className="search-icon">⌕</span>
+          <div className="search">
 
-              <input
-                type="text"
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder="Search your memories..."
-                autoComplete="off"
-              />
+            <span>⌕</span>
 
-              {query && (
-                <button
-                  type="button"
-                  className="clear-button"
-                  onClick={() => setQuery("")}
-                  aria-label="Clear search"
-                >
-                  ×
-                </button>
-              )}
-            </div>
+            <input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search your saved memories..."
+              autoFocus
+            />
+
+            {query && (
+              <button onClick={() => setQuery("")}>
+                ×
+              </button>
+            )}
+
           </div>
 
-          <div className="hero-orbit">
-            <div className="orbit-ring ring-one" />
-            <div className="orbit-ring ring-two" />
+          <p className="hint">
+            Search through the information you have captured.
+          </p>
 
-            <div className="orbit-dot dot-one" />
-            <div className="orbit-dot dot-two" />
-            <div className="orbit-dot dot-three" />
-
-            <div className="orbit-center">⌕</div>
-          </div>
-        </section>
-
-        {/* SEARCH INFO */}
-        <section className="stats">
-          <div className="stat-card">
-            <span>MEMORIES</span>
-            <strong>{memories.length}</strong>
-            <p>Total saved memories</p>
-          </div>
-
-          <div className="stat-card">
-            <span>RESULTS</span>
-            <strong>{results.length}</strong>
-            <p>
-              {query.trim()
-                ? "Matching your search"
-                : "Showing all memories"}
-            </p>
-          </div>
-
-          <div className="stat-card">
-            <span>STATUS</span>
-            <strong>{query.trim() ? "Active" : "Ready"}</strong>
-            <p>Search is available</p>
-          </div>
         </section>
 
         {/* RESULTS */}
-        <section className="section">
-          <div className="section-heading">
+
+        <section className="results">
+
+          <div className="results-header">
+
             <div>
-              <span>{query.trim() ? "SEARCH RESULTS" : "MEMORY SPACE"}</span>
+              <p>YOUR MEMORIES</p>
 
               <h2>
-                {query.trim()
-                  ? `Results for "${query}"`
-                  : "Your memories"}
+                {query
+                  ? `${filteredMemories.length} result${
+                      filteredMemories.length === 1 ? "" : "s"
+                    }`
+                  : `${memories.length} saved`}
               </h2>
             </div>
 
-            <div className="count">{results.length}</div>
           </div>
 
           {loading ? (
-            <div className="empty-card">
-              <div className="loader" />
-              <p>Loading your memories...</p>
+
+            <div className="empty">
+              Loading your memories...
             </div>
-          ) : results.length === 0 ? (
-            <div className="empty-card">
-              <div className="empty-icon">⌕</div>
+
+          ) : filteredMemories.length === 0 ? (
+
+            <div className="empty">
+
+              <div className="empty-icon">
+                {query ? "⌕" : "✦"}
+              </div>
 
               <h3>
-                {query.trim()
-                  ? "No memories found"
-                  : "Your memory space is empty"}
+                {query
+                  ? "No matching memories"
+                  : "Nothing saved yet"}
               </h3>
 
               <p>
-                {query.trim()
-                  ? "Try a different word, topic, category, or source type."
+                {query
+                  ? "Try different words or another detail."
                   : "Capture your first memory and it will appear here."}
               </p>
 
-              {query.trim() ? (
-                <button
-                  type="button"
-                  className="empty-button"
-                  onClick={() => setQuery("")}
-                >
-                  Clear search
-                </button>
-              ) : (
-                <a href="/capture" className="empty-button">
-                  Capture a memory
-                </a>
+              {!query && (
+                <Link href="/capture">
+                  Capture a memory →
+                </Link>
               )}
+
             </div>
+
           ) : (
+
             <div className="memory-list">
-              {results.map((memory) => (
-                <a
+
+              {filteredMemories.map((memory) => (
+
+                <Link
                   href={`/memories/${memory.id}`}
-                  className="memory-card"
+                  className="memory"
                   key={memory.id}
                 >
-                  <div className="memory-type">
-                    {memory.source_type || "MEMORY"}
+
+                  <div className="memory-icon">
+                    {sourceIcon(memory.source_type)}
                   </div>
 
-                  <div className="memory-main">
-                    <h3>{memory.title}</h3>
+                  <div className="memory-content">
 
-                    {memory.summary && <p>{memory.summary}</p>}
-
-                    <div className="memory-meta">
-                      {memory.category && (
-                        <span>{memory.category}</span>
-                      )}
+                    <div className="meta">
 
                       <span>
-                        {new Date(memory.created_at).toLocaleDateString(
-                          "en-IN",
-                          {
-                            day: "numeric",
-                            month: "short",
-                            year: "numeric",
-                          }
-                        )}
+                        {memory.category || "Other"}
                       </span>
 
-                      {memory.is_favorite && <span>Favorite</span>}
+                      <time>
+                        {new Date(
+                          memory.created_at
+                        ).toLocaleDateString("en-IN", {
+                          day: "numeric",
+                          month: "short",
+                          year: "numeric",
+                        })}
+                      </time>
+
                     </div>
+
+                    <h3>{memory.title}</h3>
+
+                    {memory.summary && (
+                      <p>{memory.summary}</p>
+                    )}
+
+                    {memory.deadline && (
+                      <small>
+                        Deadline:{" "}
+                        {new Date(
+                          memory.deadline
+                        ).toLocaleDateString("en-IN", {
+                          day: "numeric",
+                          month: "short",
+                          year: "numeric",
+                        })}
+                      </small>
+                    )}
+
                   </div>
 
-                  <div className="memory-arrow">→</div>
-                </a>
+                  <div className="arrow">
+                    →
+                  </div>
+
+                </Link>
+
               ))}
+
             </div>
+
           )}
+
         </section>
-      </section>
+
+      </div>
 
       <style jsx>{`
+
+        * {
+          box-sizing: border-box;
+        }
+
         .page {
           min-height: 100vh;
-          background: #f7f8fa;
-          color: #17191e;
+          background: #f7f8fb;
+          color: #101828;
+
           font-family:
             Inter,
-            ui-sans-serif,
             system-ui,
             -apple-system,
             BlinkMacSystemFont,
@@ -322,701 +322,500 @@ export default function SearchPage() {
             sans-serif;
         }
 
+        /* SIDEBAR */
+
         .sidebar {
           position: fixed;
-          inset: 0 auto 0 0;
-          width: 238px;
-          background: #fff;
-          border-right: 1px solid #e7e8eb;
+
+          left: 0;
+          top: 0;
+
+          width: 125px;
+          height: 100vh;
+
+          background: white;
+
+          border-right: 1px solid #eaecf0;
+
           display: flex;
           flex-direction: column;
-          padding: 28px 18px 20px;
+          align-items: center;
+
+          padding: 25px 12px;
+
           z-index: 20;
         }
 
         .logo {
+          display: block;
+
+          margin-bottom: 80px;
+        }
+
+        nav {
           display: flex;
-          align-items: center;
-          gap: 11px;
-          padding: 0 10px;
-          font-size: 18px;
-          font-weight: 750;
-          letter-spacing: -0.4px;
-        }
+          flex-direction: column;
 
-        .logo-mark {
-          width: 34px;
-          height: 34px;
-          border-radius: 11px;
-          display: grid;
-          place-items: center;
-          background: #17191e;
-          color: white;
-          font-size: 15px;
-          font-weight: 800;
-        }
-
-        .workspace-label {
-          margin: 48px 12px 13px;
-          color: #a1a4aa;
-          font-size: 10px;
-          font-weight: 750;
-          letter-spacing: 1.5px;
+          gap: 12px;
         }
 
         .nav {
+          width: 70px;
+          min-height: 58px;
+
           display: flex;
           flex-direction: column;
-          gap: 5px;
-        }
 
-        .nav a {
-          display: flex;
           align-items: center;
-          gap: 13px;
-          padding: 12px 13px;
-          border-radius: 11px;
+          justify-content: center;
+
+          gap: 4px;
+
+          color: #98a2b3;
+
           text-decoration: none;
-          color: #777b83;
-          font-size: 14px;
-          font-weight: 600;
-          transition: 0.2s ease;
+
+          border-radius: 16px;
+
+          transition: 0.2s;
         }
 
-        .nav a span {
-          width: 20px;
-          text-align: center;
-          font-size: 18px;
+        .nav span {
+          font-size: 22px;
         }
 
-        .nav a:hover {
-          background: #f4f5f7;
-          color: #17191e;
-        }
-
-        .nav a.active {
-          background: #17191e;
-          color: white;
-        }
-
-        .account {
-          margin-top: auto;
-          display: flex;
-          align-items: center;
-          gap: 10px;
-          padding: 11px;
-          border-top: 1px solid #ececef;
-          padding-top: 18px;
-          text-decoration: none;
-          color: inherit;
-        }
-
-        .avatar {
-          width: 35px;
-          height: 35px;
-          border-radius: 50%;
-          background: #eceef1;
-          display: grid;
-          place-items: center;
+        .nav label {
+          font-size: 8px;
           font-weight: 700;
-          font-size: 13px;
         }
 
-        .account strong,
-        .account small {
-          display: block;
+        .nav:hover {
+          background: #f2f4f7;
+          color: #101828;
         }
 
-        .account strong {
-          font-size: 12px;
+        /* MAIN */
+
+        .main {
+          margin-left: 125px;
+
+          width: calc(100% - 125px);
+
+          max-width: 1200px;
+
+          padding: 70px 6% 100px;
         }
 
-        .account small {
-          color: #999ca2;
-          margin-top: 2px;
-          font-size: 10px;
-        }
-
-        .content {
-          margin-left: 238px;
-          padding: 34px 46px 70px;
-          max-width: 1500px;
-        }
-
-        .topbar {
+        header {
           display: flex;
+
+          align-items: flex-end;
+
           justify-content: space-between;
-          align-items: center;
-          margin-bottom: 28px;
+
+          margin-bottom: 35px;
         }
 
-        .eyebrow {
-          color: #9b9ea5;
-          font-size: 10px;
-          font-weight: 750;
-          letter-spacing: 1.4px;
-          margin-bottom: 5px;
+        header p {
+          margin: 0 0 8px;
+
+          color: #98a2b3;
+
+          font-size: 11px;
+
+          font-weight: 800;
+
+          letter-spacing: 0.14em;
         }
 
-        .topbar h1 {
+        header h1 {
           margin: 0;
-          font-size: 30px;
-          letter-spacing: -1px;
+
+          font-size: 48px;
+
+          letter-spacing: -0.05em;
         }
 
-        .capture-button {
-          background: #17191e;
+        .capture {
+          background: #17191f;
+
           color: white;
-          text-decoration: none;
-          padding: 11px 17px;
-          border-radius: 10px;
-          font-size: 13px;
-          font-weight: 650;
-          transition: 0.2s ease;
-        }
 
-        .capture-button:hover {
-          background: #272a31;
-          transform: translateY(-1px);
+          text-decoration: none;
+
+          padding: 16px 20px;
+
+          border-radius: 13px;
+
+          font-size: 13px;
+
+          font-weight: 800;
         }
 
         /* HERO */
 
         .hero {
-          min-height: 255px;
-          border-radius: 24px;
-          background: #17191e;
+          background: #17191f;
+
           color: white;
-          padding: 38px 42px;
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
+
+          border-radius: 28px;
+
+          padding: 55px;
+
+          margin-bottom: 45px;
+
           overflow: hidden;
-          position: relative;
         }
 
-        .hero-copy {
-          position: relative;
-          z-index: 2;
-        }
+        .label {
+          color: #98a2b3;
 
-        .hero-label {
-          color: #9ea2aa;
-          font-size: 10px;
-          letter-spacing: 1.7px;
-          font-weight: 750;
+          font-size: 11px;
+
+          font-weight: 800;
+
+          letter-spacing: 0.15em;
         }
 
         .hero h2 {
-          margin: 12px 0;
-          font-size: clamp(30px, 4vw, 48px);
-          line-height: 1.03;
-          letter-spacing: -2px;
+          margin: 18px 0 30px;
+
+          font-size: clamp(35px, 5vw, 58px);
+
+          line-height: 0.98;
+
+          letter-spacing: -0.055em;
+        }
+
+        .search {
+          height: 62px;
+
           max-width: 700px;
-        }
 
-        .hero h2 span {
-          color: #a9adb5;
-        }
-
-        .hero p {
-          color: #a9adb5;
-          max-width: 530px;
-          font-size: 14px;
-          line-height: 1.7;
-          margin: 0 0 20px;
-        }
-
-        .search-box {
-          width: min(510px, 100%);
-          height: 48px;
           display: flex;
+
           align-items: center;
-          gap: 11px;
-          background: #24272d;
-          border: 1px solid #3b3e45;
-          border-radius: 11px;
-          padding: 0 14px;
-          transition: 0.2s ease;
-        }
 
-        .search-box:focus-within {
-          border-color: #686c75;
-          background: #292c32;
-        }
-
-        .search-icon {
-          color: #aeb2b9;
-          font-size: 21px;
-          line-height: 1;
-        }
-
-        .search-box input {
-          flex: 1;
-          min-width: 0;
-          border: 0;
-          outline: 0;
-          background: transparent;
-          color: white;
-          font-size: 13px;
-          font-family: inherit;
-        }
-
-        .search-box input::placeholder {
-          color: #858991;
-        }
-
-        .clear-button {
-          border: 0;
-          background: transparent;
-          color: #9da1a8;
-          cursor: pointer;
-          font-size: 21px;
-          line-height: 1;
-          padding: 2px 4px;
-        }
-
-        .clear-button:hover {
-          color: white;
-        }
-
-        /* ORBIT */
-
-        .hero-orbit {
-          width: 190px;
-          height: 190px;
-          position: relative;
-          margin-right: 45px;
-          flex-shrink: 0;
-        }
-
-        .orbit-ring {
-          position: absolute;
-          inset: 0;
-          border: 1px solid #383b42;
-          border-radius: 50%;
-        }
-
-        .ring-two {
-          inset: 27px;
-          border-color: #454850;
-        }
-
-        .orbit-center {
-          position: absolute;
-          width: 55px;
-          height: 55px;
-          left: 50%;
-          top: 50%;
-          transform: translate(-50%, -50%);
-          border-radius: 50%;
-          background: #fff;
-          color: #17191e;
-          display: grid;
-          place-items: center;
-          font-size: 21px;
-          font-weight: 700;
-        }
-
-        .orbit-dot {
-          position: absolute;
-          width: 9px;
-          height: 9px;
           background: white;
-          border-radius: 50%;
+
+          border-radius: 14px;
+
+          padding: 0 18px;
+
+          color: #667085;
         }
 
-        .dot-one {
-          top: 11px;
-          left: 93px;
+        .search span {
+          font-size: 25px;
+
+          margin-right: 12px;
         }
 
-        .dot-two {
-          bottom: 22px;
-          right: 8px;
+        .search input {
+          flex: 1;
+
+          border: 0;
+
+          outline: 0;
+
+          background: transparent;
+
+          font-size: 14px;
+
+          color: #101828;
         }
 
-        .dot-three {
-          left: 14px;
-          bottom: 58px;
-          width: 6px;
-          height: 6px;
-          background: #777b83;
+        .search button {
+          border: 0;
+
+          background: transparent;
+
+          font-size: 24px;
+
+          color: #98a2b3;
+
+          cursor: pointer;
         }
 
-        /* STATS */
+        .hint {
+          color: #98a2b3;
 
-        .stats {
-          display: grid;
-          grid-template-columns: repeat(3, 1fr);
-          gap: 14px;
-          margin: 18px 0 42px;
-        }
-
-        .stat-card {
-          background: #fff;
-          border: 1px solid #e8e9ec;
-          border-radius: 16px;
-          padding: 20px;
-        }
-
-        .stat-card span {
-          color: #9b9ea5;
-          font-size: 9px;
-          font-weight: 750;
-          letter-spacing: 1.4px;
-        }
-
-        .stat-card strong {
-          display: block;
-          font-size: 28px;
-          margin-top: 7px;
-          letter-spacing: -1px;
-        }
-
-        .stat-card p {
-          color: #92959c;
           font-size: 11px;
-          margin: 3px 0 0;
         }
 
-        /* SECTION */
+        /* RESULTS */
 
-        .section {
-          margin-top: 38px;
-        }
+        .results-header p {
+          margin: 0 0 8px;
 
-        .section-heading {
-          display: flex;
-          justify-content: space-between;
-          align-items: end;
-          margin-bottom: 15px;
-        }
+          color: #98a2b3;
 
-        .section-heading > div:first-child > span {
-          color: #9b9ea5;
-          font-size: 9px;
-          font-weight: 750;
-          letter-spacing: 1.4px;
-        }
-
-        .section-heading h2 {
-          margin: 5px 0 0;
-          font-size: 21px;
-          letter-spacing: -0.5px;
-        }
-
-        .count {
-          width: 29px;
-          height: 29px;
-          border-radius: 9px;
-          background: #e9eaed;
-          display: grid;
-          place-items: center;
           font-size: 11px;
-          font-weight: 700;
+
+          font-weight: 800;
+
+          letter-spacing: 0.14em;
         }
 
-        /* MEMORY CARDS */
+        .results-header h2 {
+          margin: 0 0 18px;
+
+          font-size: 22px;
+        }
 
         .memory-list {
           display: flex;
+
           flex-direction: column;
-          gap: 9px;
-        }
 
-        .memory-card {
-          background: #fff;
-          border: 1px solid #e7e8eb;
-          border-radius: 15px;
-          padding: 18px;
-          display: flex;
-          align-items: center;
-          gap: 16px;
-          text-decoration: none;
-          color: inherit;
-          transition: 0.2s ease;
-        }
-
-        .memory-card:hover {
-          border-color: #d5d7db;
-          transform: translateY(-1px);
-          box-shadow: 0 7px 20px rgba(23, 25, 30, 0.04);
-        }
-
-        .memory-type {
-          width: 72px;
-          height: 30px;
-          border-radius: 8px;
-          background: #f0f1f3;
-          display: grid;
-          place-items: center;
-          color: #777b83;
-          font-size: 8px;
-          font-weight: 750;
-          letter-spacing: 0.8px;
-          flex-shrink: 0;
-        }
-
-        .memory-main {
-          min-width: 0;
-          flex: 1;
-        }
-
-        .memory-main h3 {
-          margin: 0;
-          font-size: 14px;
-          letter-spacing: -0.2px;
-        }
-
-        .memory-main p {
-          margin: 5px 0 0;
-          color: #898c93;
-          font-size: 11px;
-          line-height: 1.5;
-          white-space: nowrap;
-          overflow: hidden;
-          text-overflow: ellipsis;
-        }
-
-        .memory-meta {
-          display: flex;
           gap: 10px;
-          margin-top: 7px;
         }
 
-        .memory-meta span {
-          color: #a1a4aa;
-          font-size: 9px;
+        .memory {
+          background: white;
+
+          border: 1px solid #eaecf0;
+
+          border-radius: 17px;
+
+          padding: 19px;
+
+          display: grid;
+
+          grid-template-columns:
+            48px
+            minmax(0, 1fr)
+            30px;
+
+          gap: 15px;
+
+          align-items: center;
+
+          color: inherit;
+
+          text-decoration: none;
+
+          transition: 0.2s;
         }
 
-        .memory-meta span + span {
-          padding-left: 10px;
-          border-left: 1px solid #e1e2e5;
+        .memory:hover {
+          transform: translateY(-2px);
+
+          border-color: #d0d5dd;
+
+          box-shadow:
+            0 12px 30px rgba(16, 24, 40, 0.06);
         }
 
-        .memory-arrow {
-          color: #a1a4aa;
+        .memory-icon {
+          width: 48px;
+
+          height: 48px;
+
+          border-radius: 13px;
+
+          background: #f2f4f7;
+
+          display: grid;
+
+          place-items: center;
+
           font-size: 18px;
-          flex-shrink: 0;
+        }
+
+        .memory-content {
+          min-width: 0;
+        }
+
+        .meta {
+          display: flex;
+
+          gap: 15px;
+        }
+
+        .meta span {
+          font-size: 9px;
+
+          text-transform: uppercase;
+
+          letter-spacing: 0.08em;
+
+          font-weight: 800;
+
+          color: #667085;
+        }
+
+        .meta time {
+          font-size: 10px;
+
+          color: #98a2b3;
+        }
+
+        .memory h3 {
+          margin: 7px 0 5px;
+
+          font-size: 15px;
+
+          overflow: hidden;
+
+          text-overflow: ellipsis;
+
+          white-space: nowrap;
+        }
+
+        .memory p {
+          margin: 0;
+
+          color: #667085;
+
+          font-size: 11px;
+
+          line-height: 1.5;
+        }
+
+        .memory small {
+          display: inline-block;
+
+          margin-top: 7px;
+
+          color: #667085;
+
+          font-size: 10px;
+
+          font-weight: 700;
+        }
+
+        .arrow {
+          color: #98a2b3;
+
+          font-size: 20px;
         }
 
         /* EMPTY */
 
-        .empty-card {
-          background: #fff;
-          border: 1px solid #e7e8eb;
-          border-radius: 16px;
-          padding: 45px 25px;
+        .empty {
+          background: white;
+
+          border: 1px solid #eaecf0;
+
+          border-radius: 18px;
+
+          min-height: 250px;
+
+          display: flex;
+
+          align-items: center;
+
+          justify-content: center;
+
+          flex-direction: column;
+
           text-align: center;
+
+          color: #98a2b3;
+
+          padding: 30px;
         }
 
         .empty-icon {
-          width: 48px;
-          height: 48px;
-          border-radius: 14px;
-          background: #f0f1f3;
+          width: 52px;
+
+          height: 52px;
+
+          border-radius: 50%;
+
+          border: 1px dashed #d0d5dd;
+
           display: grid;
+
           place-items: center;
-          margin: 0 auto 15px;
-          font-size: 23px;
+
+          margin-bottom: 15px;
         }
 
-        .empty-card h3 {
-          margin: 0;
+        .empty h3 {
+          color: #101828;
+
+          margin: 0 0 7px;
+
           font-size: 16px;
         }
 
-        .empty-card p {
-          color: #92959c;
+        .empty p {
+          margin: 0 0 15px;
+
           font-size: 12px;
-          line-height: 1.6;
-          max-width: 390px;
-          margin: 8px auto 18px;
         }
 
-        .empty-button {
-          display: inline-block;
-          border: 0;
-          background: #17191e;
-          color: white;
+        .empty a {
+          color: #101828;
+
+          font-size: 12px;
+
+          font-weight: 800;
+
           text-decoration: none;
-          padding: 10px 15px;
-          border-radius: 9px;
-          font-size: 11px;
-          font-weight: 650;
-          cursor: pointer;
-          font-family: inherit;
         }
 
-        .loader {
-          width: 22px;
-          height: 22px;
-          border: 2px solid #e4e5e8;
-          border-top-color: #17191e;
-          border-radius: 50%;
-          margin: 0 auto 12px;
-          animation: spin 0.7s linear infinite;
-        }
+        /* MOBILE */
 
-        .empty-card > p {
-          margin: 0;
-        }
+        @media (max-width: 700px) {
 
-        @keyframes spin {
-          to {
-            transform: rotate(360deg);
-          }
-        }
-
-        /* TABLET */
-
-        @media (max-width: 1100px) {
-          .hero-orbit {
-            margin-right: 10px;
-          }
-
-          .content {
-            padding-left: 30px;
-            padding-right: 30px;
-          }
-        }
-
-        @media (max-width: 900px) {
           .sidebar {
-            width: 76px;
-            padding: 28px 10px 20px;
+            width: 82px;
+
+            padding: 20px 8px;
+          }
+
+          .main {
+            margin-left: 82px;
+
+            width: calc(100% - 82px);
+
+            padding: 45px 5%;
           }
 
           .logo {
-            justify-content: center;
-            padding: 0;
+            margin-bottom: 55px;
           }
 
-          .logo span,
-          .workspace-label {
-            display: none;
+          .nav {
+            width: 60px;
+
+            min-height: 55px;
           }
 
-          .nav a {
-            justify-content: center;
-            padding: 12px;
-            font-size: 0;
+          header {
+            flex-direction: column;
+
+            align-items: flex-start;
+
+            gap: 18px;
           }
 
-          .nav a span {
-            font-size: 18px;
+          header h1 {
+            font-size: 40px;
           }
 
-          .account {
-            justify-content: center;
-          }
+          .capture {
+            width: 100%;
 
-          .account > div:last-child {
-            display: none;
-          }
-
-          .content {
-            margin-left: 76px;
-          }
-
-          .hero-orbit {
-            width: 150px;
-            height: 150px;
-          }
-        }
-
-        @media (max-width: 650px) {
-          .content {
-            padding: 22px 15px 50px;
-          }
-
-          .topbar {
-            margin-bottom: 20px;
-          }
-
-          .topbar h1 {
-            font-size: 25px;
-          }
-
-          .capture-button {
-            padding: 9px 12px;
-            font-size: 11px;
+            text-align: center;
           }
 
           .hero {
-            min-height: auto;
-            padding: 28px 23px;
-            border-radius: 19px;
+            padding: 35px 25px;
           }
 
           .hero h2 {
-            font-size: 31px;
-            letter-spacing: -1.5px;
+            font-size: 38px;
           }
 
-          .hero p {
-            font-size: 12px;
-          }
-
-          .hero-orbit {
-            display: none;
-          }
-
-          .search-box {
-            width: 100%;
-          }
-
-          .stats {
-            gap: 8px;
-            margin-bottom: 32px;
-          }
-
-          .stat-card {
-            padding: 14px 12px;
-            border-radius: 13px;
-          }
-
-          .stat-card strong {
-            font-size: 22px;
-          }
-
-          .stat-card p {
-            font-size: 9px;
-          }
-
-          .section {
-            margin-top: 30px;
-          }
-
-          .section-heading h2 {
-            font-size: 18px;
-          }
-
-          .memory-card {
-            padding: 14px;
-            gap: 10px;
-          }
-
-          .memory-type {
-            width: 58px;
-            height: 27px;
-            font-size: 7px;
-          }
-
-          .memory-main h3 {
-            font-size: 12px;
-          }
-
-          .memory-main p {
-            font-size: 10px;
-          }
-
-          .memory-arrow {
-            font-size: 15px;
-          }
         }
+
       `}</style>
+
     </main>
   );
 }

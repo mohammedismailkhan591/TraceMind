@@ -1,19 +1,21 @@
-
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
 import { createClient } from "../../lib/supabase";
-import Sidebar from "../../components/sidebar";
 
 export default function ProfilePage() {
-  const router = useRouter();
   const supabase = createClient();
 
   const [user, setUser] = useState<any>(null);
-  const [fullName, setFullName] = useState("");
+  const [name, setName] = useState("");
   const [email, setEmail] = useState("");
-  const [loading, setLoading] = useState(true);
+
+  const [memoryCount, setMemoryCount] = useState(0);
+  const [favoriteCount, setFavoriteCount] = useState(0);
+  const [reminderCount, setReminderCount] = useState(0);
+
+  const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
 
@@ -26,881 +28,680 @@ export default function ProfilePage() {
       data: { user },
     } = await supabase.auth.getUser();
 
-    if (!user) {
-      router.push("/login");
-      return;
-    }
+    if (!user) return;
 
     setUser(user);
+
+    const currentName =
+      user.user_metadata?.name ||
+      user.user_metadata?.full_name ||
+      "";
+
+    setName(currentName);
     setEmail(user.email || "");
 
-    const { data } = await supabase
-      .from("profiles")
-      .select("full_name")
-      .eq("id", user.id)
-      .maybeSingle();
+    const { count: memories } = await supabase
+      .from("memories")
+      .select("*", {
+        count: "exact",
+        head: true,
+      })
+      .eq("user_id", user.id);
 
-    setFullName(data?.full_name || "");
-    setLoading(false);
+    const { count: favorites } = await supabase
+      .from("memories")
+      .select("*", {
+        count: "exact",
+        head: true,
+      })
+      .eq("user_id", user.id)
+      .eq("is_favorite", true);
+
+    const { count: reminders } = await supabase
+      .from("reminders")
+      .select("*", {
+        count: "exact",
+        head: true,
+      })
+      .eq("user_id", user.id)
+      .eq("completed", false);
+
+    setMemoryCount(memories || 0);
+    setFavoriteCount(favorites || 0);
+    setReminderCount(reminders || 0);
   }
 
   async function saveProfile() {
     if (!user) return;
 
+    if (!name.trim()) {
+      setMessage("Please enter your name.");
+      return;
+    }
+
     setSaving(true);
     setMessage("");
 
-    const { error } = await supabase
-      .from("profiles")
-      .upsert({
-        id: user.id,
-        full_name: fullName.trim(),
-      });
+    const { error } = await supabase.auth.updateUser({
+      data: {
+        name: name.trim(),
+      },
+    });
 
     if (error) {
       setMessage(error.message);
     } else {
       setMessage("Profile updated successfully.");
+      setEditing(false);
+
+      setUser({
+        ...user,
+        user_metadata: {
+          ...user.user_metadata,
+          name: name.trim(),
+        },
+      });
     }
 
     setSaving(false);
   }
 
-  async function changePassword() {
-    const password = prompt("Enter your new password:");
-
-    if (!password) return;
-
-    if (password.length < 6) {
-      alert("Password must be at least 6 characters.");
-      return;
-    }
-
-    const { error } = await supabase.auth.updateUser({
-      password,
-    });
-
-    if (error) {
-      alert(error.message);
-    } else {
-      alert("Password updated successfully.");
-    }
-  }
-
   async function signOut() {
     await supabase.auth.signOut();
-    router.push("/login");
+    window.location.href = "/login";
   }
 
-  async function deleteAccount() {
-    const confirmed = confirm(
-      "Are you sure you want to delete your account? This action cannot be undone."
-    );
-
-    if (!confirmed) return;
-
-    alert(
-      "Account deletion requires a secure server-side action. We will connect this to the backend before enabling permanent deletion."
-    );
-  }
-
-  if (loading) {
+  if (!user) {
     return (
-      <main className="profile-loading">
-        <p>Loading profile...</p>
+      <main className="loading">
+        Loading profile...
       </main>
     );
   }
 
-  const initial = (
-    fullName?.charAt(0) ||
-    email?.charAt(0) ||
-    "M"
-  ).toUpperCase();
+  const firstLetter =
+    name?.trim()?.charAt(0)?.toUpperCase() ||
+    email?.charAt(0)?.toUpperCase() ||
+    "U";
 
   return (
-    <>
-      <Sidebar />
+    <main className="page">
+      <aside className="sidebar">
+        <div className="logo">T</div>
 
-      <main className="profile-page">
-        {/* Topbar */}
-        <header className="profile-topbar">
+        <nav>
+          <Link href="/dashboard">⌂</Link>
+          <Link href="/capture">＋</Link>
+          <Link href="/memories">▣</Link>
+          <Link href="/timeline">◷</Link>
+          <Link href="/reminders">◌</Link>
+        </nav>
+
+        <Link className="profileNav active" href="/profile">
+          {firstLetter}
+        </Link>
+      </aside>
+
+      <section className="content">
+        <header>
           <div>
-            <div className="eyebrow">ACCOUNT</div>
-            <h1>Profile</h1>
-          </div>
+            <p className="eyebrow">YOUR ACCOUNT</p>
 
-          <button
-            className="capture-button"
-            onClick={() => router.push("/capture")}
-          >
-            + Capture memory
-          </button>
+            <h1>Profile</h1>
+
+            <p className="subtitle">
+              Manage your TraceMind account and personal information.
+            </p>
+          </div>
         </header>
 
-        {/* Hero */}
-        <section className="profile-hero">
-          <div className="hero-copy">
-            <span className="hero-label">YOUR SPACE</span>
+        <section className="profileHero">
+          <div className="avatar">
+            {firstLetter}
+          </div>
 
-            <h2>
-              Your memory space.
-              <br />
-              <span>Set it up your way.</span>
-            </h2>
+          <div className="heroInfo">
+            <h2>{name || "TraceMind user"}</h2>
+            <p>{email}</p>
+            <span>TraceMind member</span>
+          </div>
 
+          {!editing && (
+            <button
+              className="editButton"
+              onClick={() => setEditing(true)}
+            >
+              Edit profile
+            </button>
+          )}
+        </section>
+
+        <section className="stats">
+          <div>
+            <span>Memories</span>
+            <strong>{memoryCount}</strong>
+            <small>Information saved</small>
+          </div>
+
+          <div>
+            <span>Favorites</span>
+            <strong>{favoriteCount}</strong>
+            <small>Important memories</small>
+          </div>
+
+          <div>
+            <span>Reminders</span>
+            <strong>{reminderCount}</strong>
+            <small>Still to remember</small>
+          </div>
+        </section>
+
+        <div className="profileGrid">
+          <section className="card">
+            <div className="cardHeader">
+              <div>
+                <p className="eyebrow">PERSONAL INFORMATION</p>
+                <h2>Account details</h2>
+              </div>
+            </div>
+
+            <div className="form">
+              <label>Name</label>
+
+              {editing ? (
+                <input
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder="Your name"
+                />
+              ) : (
+                <div className="value">
+                  {name || "Not set"}
+                </div>
+              )}
+
+              <label>Email</label>
+
+              <div className="value muted">
+                {email}
+              </div>
+
+              {editing && (
+                <div className="actions">
+                  <button
+                    className="cancel"
+                    onClick={() => {
+                      setEditing(false);
+                      setMessage("");
+                    }}
+                  >
+                    Cancel
+                  </button>
+
+                  <button
+                    className="save"
+                    onClick={saveProfile}
+                    disabled={saving}
+                  >
+                    {saving ? "Saving..." : "Save changes"}
+                  </button>
+                </div>
+              )}
+
+              {message && (
+                <p className="message">{message}</p>
+              )}
+            </div>
+          </section>
+
+          <section className="card">
+            <div className="cardHeader">
+              <div>
+                <p className="eyebrow">QUICK ACCESS</p>
+                <h2>Your TraceMind</h2>
+              </div>
+            </div>
+
+            <div className="links">
+              <Link href="/memories">
+                <div>
+                  <strong>My memories</strong>
+                  <span>Browse everything you've saved</span>
+                </div>
+                <span>→</span>
+              </Link>
+
+              <Link href="/timeline">
+                <div>
+                  <strong>Memory timeline</strong>
+                  <span>See when you captured information</span>
+                </div>
+                <span>→</span>
+              </Link>
+
+              <Link href="/reminders">
+                <div>
+                  <strong>Reminders</strong>
+                  <span>Keep track of important dates</span>
+                </div>
+                <span>→</span>
+              </Link>
+
+              <Link href="/capture">
+                <div>
+                  <strong>Capture something</strong>
+                  <span>Save new information</span>
+                </div>
+                <span>→</span>
+              </Link>
+            </div>
+          </section>
+        </div>
+
+        <section className="security card">
+          <div>
+            <p className="eyebrow">ACCOUNT</p>
+            <h2>Sign out</h2>
             <p>
-              Manage your personal information, account security and
-              TraceMind preferences from one place.
+              Sign out of your TraceMind account on this device.
             </p>
           </div>
 
-          <div className="hero-orbit">
-            <div className="orbit orbit-one">
-              <span />
-            </div>
-            <div className="orbit orbit-two">
-              <span />
-            </div>
-            <div className="orbit-core">{initial}</div>
-          </div>
+          <button className="signOut" onClick={signOut}>
+            Sign out
+          </button>
         </section>
+      </section>
 
-        {/* Profile overview */}
-        <section className="profile-overview">
-          <div className="overview-card">
-            <span className="overview-label">ACCOUNT</span>
-            <strong>{email}</strong>
-            <small>Authenticated TraceMind account</small>
-          </div>
-
-          <div className="overview-card">
-            <span className="overview-label">PROFILE</span>
-            <strong>{fullName || "Not set"}</strong>
-            <small>Your display name</small>
-          </div>
-
-          <div className="overview-card">
-            <span className="overview-label">STATUS</span>
-            <strong>Active</strong>
-            <small>Your account is currently active</small>
-          </div>
-        </section>
-
-        {/* Personal information */}
-        <section className="section">
-          <div className="section-heading">
-            <div>
-              <span className="section-label">PERSONAL INFORMATION</span>
-              <h2>Profile details</h2>
-            </div>
-
-            <span className="section-note">Private to your account</span>
-          </div>
-
-          <div className="settings-card">
-            <div className="profile-heading">
-              <div className="large-avatar">{initial}</div>
-
-              <div>
-                <h3>Your Profile</h3>
-                <p>Update the information connected to your account.</p>
-              </div>
-            </div>
-
-            <div className="form-grid">
-              <div className="field">
-                <label>Full name</label>
-                <input
-                  value={fullName}
-                  onChange={(e) => setFullName(e.target.value)}
-                  placeholder="Enter your name"
-                />
-              </div>
-
-              <div className="field">
-                <label>Email address</label>
-                <input value={email} disabled />
-                <small>Email is managed through your authentication account.</small>
-              </div>
-            </div>
-
-            <div className="save-row">
-              <button
-                onClick={saveProfile}
-                disabled={saving}
-                className="primary-button"
-              >
-                {saving ? "Saving..." : "Save changes"}
-              </button>
-
-              {message && (
-                <span className="save-message">{message}</span>
-              )}
-            </div>
-          </div>
-        </section>
-
-        {/* Security */}
-        <section className="section">
-          <div className="section-heading">
-            <div>
-              <span className="section-label">SECURITY</span>
-              <h2>Account security</h2>
-            </div>
-          </div>
-
-          <div className="settings-row">
-            <div className="settings-icon">⌕</div>
-
-            <div className="settings-info">
-              <h3>Password</h3>
-              <p>Keep your TraceMind account protected with a secure password.</p>
-            </div>
-
-            <button
-              onClick={changePassword}
-              className="secondary-button"
-            >
-              Change password
-            </button>
-          </div>
-        </section>
-
-        {/* Privacy */}
-        <section className="section">
-          <div className="section-heading">
-            <div>
-              <span className="section-label">PRIVACY & DATA</span>
-              <h2>Your information</h2>
-            </div>
-          </div>
-
-          <div className="settings-card privacy-card">
-            <div>
-              <h3>Your memories belong to you.</h3>
-
-              <p>
-                Your saved memories are connected to your authenticated
-                account and separated from other users.
-              </p>
-            </div>
-
-            <button
-              onClick={() => alert("Data export will be added next.")}
-              className="secondary-button"
-            >
-              Export memories
-            </button>
-          </div>
-        </section>
-
-        {/* Account */}
-        <section className="section account-section">
-          <div className="section-heading">
-            <div>
-              <span className="section-label danger-label">ACCOUNT</span>
-              <h2>Account actions</h2>
-            </div>
-          </div>
-
-          <div className="account-actions">
-            <div>
-              <h3>Sign out of TraceMind</h3>
-              <p>End your current session on this device.</p>
-            </div>
-
-            <button
-              onClick={signOut}
-              className="secondary-button"
-            >
-              Sign out
-            </button>
-          </div>
-
-          <div className="delete-row">
-            <div>
-              <h3>Delete account</h3>
-              <p>
-                Permanently removing an account requires a secure
-                server-side action.
-              </p>
-            </div>
-
-            <button
-              onClick={deleteAccount}
-              className="delete-button"
-            >
-              Delete account
-            </button>
-          </div>
-        </section>
-
-        <footer className="profile-footer">
-          <span>TRACEMIND</span>
-          <span>Personal information memory</span>
-        </footer>
-      </main>
-
-      <style jsx global>{`
+      <style jsx>{`
         * {
           box-sizing: border-box;
         }
 
-        body {
-          margin: 0;
-          background: #f7f8fa;
-          color: #17191e;
-        }
-
-        .profile-page {
+        .page {
           min-height: 100vh;
-          margin-left: 238px;
-          padding: 30px 42px 60px;
-          background: #f7f8fa;
+          background:
+            radial-gradient(
+              circle at 80% 0%,
+              rgba(99, 102, 241, 0.08),
+              transparent 30%
+            ),
+            #f7f8fc;
+          color: #171923;
         }
 
-        .profile-topbar {
+        .loading {
+          min-height: 100vh;
+          display: grid;
+          place-items: center;
+          background: #f7f8fc;
+          color: #73798a;
+        }
+
+        .sidebar {
+          position: fixed;
+          left: 0;
+          top: 0;
+          bottom: 0;
+          width: 82px;
+          background: rgba(255, 255, 255, 0.94);
+          border-right: 1px solid #e7e9f0;
           display: flex;
-          align-items: flex-end;
-          justify-content: space-between;
-          gap: 20px;
-          margin-bottom: 28px;
+          flex-direction: column;
+          align-items: center;
+          z-index: 20;
         }
 
-        .eyebrow,
-        .section-label,
-        .overview-label,
-        .hero-label {
-          font-size: 10px;
-          font-weight: 750;
-          letter-spacing: 1.6px;
+        .logo {
+          width: 42px;
+          height: 42px;
+          margin-top: 24px;
+          border-radius: 13px;
+          background: #171923;
+          color: white;
+          display: grid;
+          place-items: center;
+          font-weight: 800;
+          font-size: 20px;
+        }
+
+        nav {
+          position: absolute;
+          top: 50%;
+          transform: translateY(-50%);
+          display: flex;
+          flex-direction: column;
+          gap: 14px;
+        }
+
+        nav a {
+          width: 46px;
+          height: 46px;
+          border-radius: 14px;
+          display: grid;
+          place-items: center;
+          color: #858b9b;
+          text-decoration: none;
+          font-size: 21px;
+          transition: 0.2s;
+        }
+
+        nav a:hover {
+          background: #eef0ff;
+          color: #4f46e5;
+        }
+
+        .profileNav {
+          position: absolute;
+          bottom: 24px;
+          width: 42px;
+          height: 42px;
+          border-radius: 50%;
+          background: #eef0ff;
+          color: #4f46e5;
+          display: grid;
+          place-items: center;
+          text-decoration: none;
+          font-weight: 800;
+          border: 2px solid transparent;
+        }
+
+        .profileNav.active {
+          border-color: #818cf8;
+        }
+
+        .content {
+          margin-left: 82px;
+          padding: 55px 6%;
+          max-width: 1400px;
         }
 
         .eyebrow {
-          color: #a1a4aa;
-          margin-bottom: 7px;
+          margin: 0 0 8px;
+          color: #73798a;
+          font-size: 11px;
+          font-weight: 800;
+          letter-spacing: 0.14em;
         }
 
-        .profile-topbar h1 {
+        h1 {
           margin: 0;
-          font-size: 29px;
-          line-height: 1;
-          letter-spacing: -1px;
-          font-weight: 760;
+          font-size: clamp(34px, 4vw, 50px);
+          letter-spacing: -0.04em;
         }
 
-        .capture-button {
-          border: 0;
-          border-radius: 10px;
-          background: #17191e;
-          color: white;
-          padding: 11px 17px;
-          font-size: 13px;
-          font-weight: 650;
-          cursor: pointer;
-          transition: transform .18s ease, opacity .18s ease;
+        .subtitle {
+          margin: 12px 0 0;
+          color: #73798a;
         }
 
-        .capture-button:hover {
-          transform: translateY(-1px);
-          opacity: .92;
-        }
-
-        .profile-hero {
-          position: relative;
-          min-height: 295px;
-          overflow: hidden;
+        .profileHero {
+          margin-top: 35px;
+          padding: 28px;
+          background: white;
+          border: 1px solid #e7e9f0;
+          border-radius: 24px;
           display: flex;
           align-items: center;
-          justify-content: space-between;
-          padding: 42px 48px;
-          border-radius: 20px;
-          background: #17191e;
+          gap: 20px;
+        }
+
+        .avatar {
+          width: 78px;
+          height: 78px;
+          border-radius: 24px;
+          background: #171923;
           color: white;
-        }
-
-        .hero-copy {
-          position: relative;
-          z-index: 2;
-          max-width: 650px;
-        }
-
-        .hero-label {
-          color: #9da1a8;
-        }
-
-        .profile-hero h2 {
-          margin: 16px 0 17px;
-          font-size: clamp(34px, 4vw, 53px);
-          line-height: .98;
-          letter-spacing: -2.8px;
-          font-weight: 760;
-        }
-
-        .profile-hero h2 span {
-          color: #8d9199;
-        }
-
-        .profile-hero p {
-          max-width: 560px;
-          margin: 0;
-          color: #aeb2b9;
-          font-size: 14px;
-          line-height: 1.7;
-        }
-
-        .hero-orbit {
-          position: absolute;
-          right: 55px;
-          top: 50%;
-          width: 220px;
-          height: 220px;
-          transform: translateY(-50%);
-        }
-
-        .orbit {
-          position: absolute;
-          inset: 20px;
-          border: 1px solid rgba(255,255,255,.16);
-          border-radius: 50%;
-        }
-
-        .orbit-two {
-          inset: 0;
-          transform: rotate(65deg) scaleY(.48);
-          border-color: rgba(255,255,255,.11);
-        }
-
-        .orbit span {
-          position: absolute;
-          width: 8px;
-          height: 8px;
-          top: 10px;
-          left: 50%;
-          transform: translateX(-50%);
-          border-radius: 50%;
-          background: #fff;
-          box-shadow: 0 0 18px rgba(255,255,255,.35);
-        }
-
-        .orbit-two span {
-          top: auto;
-          bottom: 24px;
-          width: 6px;
-          height: 6px;
-          opacity: .55;
-        }
-
-        .orbit-core {
-          position: absolute;
-          left: 50%;
-          top: 50%;
-          width: 65px;
-          height: 65px;
-          transform: translate(-50%, -50%);
-          border-radius: 50%;
           display: grid;
           place-items: center;
-          background: rgba(255,255,255,.08);
-          border: 1px solid rgba(255,255,255,.2);
-          color: white;
-          font-size: 20px;
-          font-weight: 750;
-          backdrop-filter: blur(8px);
+          font-size: 29px;
+          font-weight: 800;
+          flex-shrink: 0;
         }
 
-        .profile-overview {
+        .heroInfo {
+          flex: 1;
+        }
+
+        .heroInfo h2 {
+          margin: 0;
+          font-size: 25px;
+        }
+
+        .heroInfo p {
+          margin: 5px 0;
+          color: #73798a;
+        }
+
+        .heroInfo span {
+          color: #4f46e5;
+          font-size: 11px;
+          font-weight: 700;
+        }
+
+        .editButton {
+          border: 1px solid #dfe2eb;
+          background: white;
+          border-radius: 11px;
+          padding: 11px 16px;
+          cursor: pointer;
+          font-weight: 700;
+        }
+
+        .stats {
+          margin-top: 18px;
           display: grid;
           grid-template-columns: repeat(3, 1fr);
           gap: 14px;
-          margin-top: 14px;
         }
 
-        .overview-card {
-          min-height: 105px;
-          padding: 19px 20px;
-          border: 1px solid #e5e6e9;
-          border-radius: 15px;
+        .stats div {
           background: white;
+          border: 1px solid #e7e9f0;
+          border-radius: 18px;
+          padding: 20px;
         }
 
-        .overview-label {
+        .stats span {
           display: block;
-          margin-bottom: 11px;
-          color: #a1a4aa;
-        }
-
-        .overview-card strong {
-          display: block;
-          overflow: hidden;
-          text-overflow: ellipsis;
-          white-space: nowrap;
-          font-size: 15px;
-          font-weight: 700;
-        }
-
-        .overview-card small {
-          display: block;
-          margin-top: 5px;
-          color: #9a9da4;
-          font-size: 11px;
-        }
-
-        .section {
-          margin-top: 42px;
-        }
-
-        .section-heading {
-          display: flex;
-          align-items: flex-end;
-          justify-content: space-between;
-          gap: 20px;
-          margin-bottom: 15px;
-        }
-
-        .section-label {
-          display: block;
-          margin-bottom: 7px;
-          color: #a1a4aa;
-        }
-
-        .section-heading h2 {
-          margin: 0;
-          font-size: 21px;
-          line-height: 1.1;
-          letter-spacing: -.65px;
-          font-weight: 750;
-        }
-
-        .section-note {
-          color: #a0a3a9;
-          font-size: 11px;
-        }
-
-        .settings-card,
-        .settings-row,
-        .account-actions,
-        .delete-row {
-          border: 1px solid #e4e5e8;
-          border-radius: 15px;
-          background: white;
-        }
-
-        .settings-card {
-          padding: 25px;
-        }
-
-        .profile-heading {
-          display: flex;
-          align-items: center;
-          gap: 15px;
-          padding-bottom: 23px;
-          border-bottom: 1px solid #ececef;
-        }
-
-        .large-avatar {
-          width: 55px;
-          height: 55px;
-          flex: 0 0 auto;
-          display: grid;
-          place-items: center;
-          border-radius: 50%;
-          background: #17191e;
-          color: white;
-          font-size: 20px;
-          font-weight: 750;
-        }
-
-        .profile-heading h3,
-        .settings-info h3,
-        .privacy-card h3,
-        .account-actions h3,
-        .delete-row h3 {
-          margin: 0;
-          font-size: 14px;
-          font-weight: 720;
-        }
-
-        .profile-heading p,
-        .settings-info p,
-        .privacy-card p,
-        .account-actions p,
-        .delete-row p {
-          margin: 5px 0 0;
-          color: #92959c;
+          color: #73798a;
           font-size: 12px;
-          line-height: 1.55;
         }
 
-        .form-grid {
+        .stats strong {
+          display: block;
+          margin-top: 7px;
+          font-size: 28px;
+        }
+
+        .stats small {
+          display: block;
+          margin-top: 3px;
+          color: #a0a4af;
+          font-size: 10px;
+        }
+
+        .profileGrid {
+          margin-top: 18px;
           display: grid;
           grid-template-columns: 1fr 1fr;
           gap: 18px;
-          margin-top: 24px;
         }
 
-        .field label {
-          display: block;
-          margin-bottom: 8px;
-          color: #555960;
-          font-size: 11px;
-          font-weight: 700;
-        }
-
-        .field input {
-          width: 100%;
-          height: 47px;
-          border: 1px solid #dfe1e5;
-          border-radius: 10px;
-          outline: none;
-          padding: 0 13px;
+        .card {
           background: white;
-          color: #17191e;
-          font-family: inherit;
-          font-size: 13px;
-          transition: border-color .18s ease, box-shadow .18s ease;
+          border: 1px solid #e7e9f0;
+          border-radius: 21px;
+          padding: 22px;
         }
 
-        .field input:focus {
-          border-color: #b9bbc0;
-          box-shadow: 0 0 0 3px rgba(23,25,30,.05);
+        .cardHeader h2 {
+          margin: 0;
+          font-size: 21px;
         }
 
-        .field input:disabled {
-          background: #f5f6f7;
-          color: #8e9198;
-          cursor: not-allowed;
-        }
-
-        .field small {
-          display: block;
-          margin-top: 7px;
-          color: #a0a3a9;
-          font-size: 10px;
-          line-height: 1.4;
-        }
-
-        .save-row {
-          display: flex;
-          align-items: center;
-          gap: 14px;
+        .form {
           margin-top: 22px;
         }
 
-        .primary-button,
-        .secondary-button,
-        .delete-button {
-          border-radius: 10px;
-          padding: 10px 15px;
-          font-family: inherit;
+        label {
+          display: block;
+          margin-bottom: 7px;
+          color: #555b6b;
           font-size: 12px;
-          font-weight: 650;
-          cursor: pointer;
-          transition: .18s ease;
+          font-weight: 700;
         }
 
-        .primary-button {
+        input {
+          width: 100%;
+          padding: 13px;
+          border: 1px solid #dfe2eb;
+          border-radius: 11px;
+          outline: none;
+          font-size: 14px;
+        }
+
+        input:focus {
+          border-color: #818cf8;
+        }
+
+        .value {
+          padding: 13px;
+          margin-bottom: 18px;
+          border-radius: 11px;
+          background: #f7f8fc;
+          font-size: 14px;
+        }
+
+        .muted {
+          color: #73798a;
+        }
+
+        .actions {
+          margin-top: 18px;
+          display: flex;
+          justify-content: flex-end;
+          gap: 8px;
+        }
+
+        .actions button {
           border: 0;
-          background: #17191e;
+          border-radius: 10px;
+          padding: 11px 15px;
+          cursor: pointer;
+          font-weight: 700;
+        }
+
+        .cancel {
+          background: #eef0f4;
+          color: #555b6b;
+        }
+
+        .save {
+          background: #171923;
           color: white;
         }
 
-        .primary-button:hover {
-          opacity: .88;
+        .save:disabled {
+          opacity: 0.5;
         }
 
-        .primary-button:disabled {
-          opacity: .55;
-          cursor: not-allowed;
+        .message {
+          margin: 13px 0 0;
+          color: #4f46e5;
+          font-size: 12px;
         }
 
-        .secondary-button {
-          border: 1px solid #dfe1e5;
-          background: white;
-          color: #44474e;
+        .links {
+          margin-top: 18px;
         }
 
-        .secondary-button:hover {
-          background: #f5f6f7;
-          color: #17191e;
-        }
-
-        .save-message {
-          color: #777b83;
-          font-size: 11px;
-        }
-
-        .settings-row {
+        .links a {
           display: flex;
+          justify-content: space-between;
           align-items: center;
           gap: 15px;
-          padding: 19px 20px;
+          padding: 15px 0;
+          border-bottom: 1px solid #f0f1f4;
+          text-decoration: none;
+          color: #171923;
         }
 
-        .settings-icon {
-          width: 39px;
-          height: 39px;
-          flex: 0 0 auto;
-          display: grid;
-          place-items: center;
-          border-radius: 10px;
-          background: #f0f1f3;
-          color: #555960;
-          font-size: 19px;
+        .links a:last-child {
+          border-bottom: 0;
         }
 
-        .settings-info {
-          flex: 1;
-          min-width: 0;
-        }
-
-        .privacy-card {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          gap: 25px;
-        }
-
-        .account-section {
-          margin-bottom: 20px;
-        }
-
-        .account-actions {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          gap: 20px;
-          padding: 19px 20px;
-        }
-
-        .delete-row {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          gap: 20px;
-          margin-top: 10px;
-          padding: 19px 20px;
-          border-color: #eadcdd;
-        }
-
-        .delete-button {
-          border: 1px solid #e5cacc;
-          background: white;
-          color: #b05259;
-        }
-
-        .delete-button:hover {
-          background: #fff5f5;
-        }
-
-        .danger-label {
-          color: #b05259;
-        }
-
-        .profile-footer {
-          display: flex;
-          justify-content: space-between;
-          padding: 25px 3px 0;
-          color: #a1a4aa;
-          font-size: 9px;
-          font-weight: 700;
-          letter-spacing: 1.2px;
-        }
-
-        .profile-loading {
-          min-height: 100vh;
-          display: grid;
-          place-items: center;
-          background: #f7f8fa;
-          color: #888b92;
+        .links strong {
+          display: block;
           font-size: 13px;
         }
 
-        @media (max-width: 900px) {
-          .profile-page {
-            margin-left: 76px;
-            padding: 28px 25px 50px;
-          }
-
-          .hero-orbit {
-            right: 25px;
-            opacity: .55;
-          }
+        .links span {
+          color: #858b9b;
+          font-size: 11px;
         }
 
-        @media (max-width: 700px) {
-          .profile-page {
-            padding: 24px 18px 45px;
+        .links a > span {
+          font-size: 17px;
+        }
+
+        .security {
+          margin-top: 18px;
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 20px;
+        }
+
+        .security h2 {
+          margin: 0;
+          font-size: 18px;
+        }
+
+        .security p:last-child {
+          margin: 5px 0 0;
+          color: #858b9b;
+          font-size: 12px;
+        }
+
+        .signOut {
+          border: 1px solid #e2d7d7;
+          background: white;
+          color: #b33a3a;
+          padding: 11px 16px;
+          border-radius: 11px;
+          cursor: pointer;
+          font-weight: 700;
+        }
+
+        @media (max-width: 750px) {
+          .sidebar {
+            width: 65px;
           }
 
-          .profile-topbar {
+          .content {
+            margin-left: 65px;
+            padding: 35px 18px;
+          }
+
+          .profileHero {
             align-items: flex-start;
+            flex-wrap: wrap;
           }
 
-          .profile-topbar h1 {
-            font-size: 25px;
-          }
-
-          .capture-button {
-            padding: 10px 12px;
-            font-size: 11px;
-          }
-
-          .profile-hero {
-            min-height: 300px;
-            padding: 30px 27px;
-          }
-
-          .hero-orbit {
-            display: none;
-          }
-
-          .profile-hero h2 {
-            font-size: 37px;
-            letter-spacing: -2px;
-          }
-
-          .profile-overview {
-            grid-template-columns: 1fr;
-          }
-
-          .form-grid {
-            grid-template-columns: 1fr;
-          }
-
-          .privacy-card,
-          .settings-row,
-          .account-actions,
-          .delete-row {
-            align-items: flex-start;
-            flex-direction: column;
-          }
-
-          .secondary-button,
-          .delete-button {
+          .editButton {
             width: 100%;
           }
 
-          .save-row {
-            align-items: flex-start;
-            flex-direction: column;
+          .stats {
+            grid-template-columns: 1fr;
           }
 
-          .profile-footer {
-            flex-direction: column;
-            gap: 7px;
-          }
-        }
-
-        @media (max-width: 650px) {
-          .profile-page {
-            margin-left: 68px;
-            padding: 22px 15px 45px;
+          .profileGrid {
+            grid-template-columns: 1fr;
           }
         }
       `}</style>
-    </>
+    </main>
   );
 }
-

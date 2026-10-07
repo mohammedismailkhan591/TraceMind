@@ -1,111 +1,56 @@
-
 import { NextResponse } from "next/server";
-import OpenAI from "openai";
+
+function detectCategory(text: string) {
+  const t = text.toLowerCase();
+  if (/scholarship|fellowship|stipend/.test(t)) return "Scholarship";
+  if (/internship|job|hiring|vacancy|career/.test(t)) return "Job";
+  if (/hackathon|hackfest|competition/.test(t)) return "Hackathon";
+  if (/course|bootcamp|workshop|class/.test(t)) return "Course";
+  if (/event|conference|meetup|webinar/.test(t)) return "Event";
+  if (/article|blog|research paper/.test(t)) return "Article";
+  if (/whatsapp|message|chat/.test(t)) return "Message";
+  return "Other";
+}
+
+function summarize(text: string) {
+  const clean = text.replace(/\s+/g, " ").trim();
+  if (!clean) return "";
+  const sentences = clean.split(/(?<=[.!?])\s+/).filter(Boolean);
+  return sentences.slice(0, 2).join(" ").slice(0, 420);
+}
 
 export async function POST(request: Request) {
   try {
-    const apiKey = process.env.OPENAI_API_KEY;
-
-    if (!apiKey) {
-      return NextResponse.json(
-        {
-          error: "AI feature is not configured yet.",
-        },
-        { status: 503 }
-      );
-    }
-
-    const openai = new OpenAI({
-      apiKey,
-    });
-
     const body = await request.json();
-    const text = body.text;
+    const text = typeof body.text === "string" ? body.text.trim() : "";
 
-    if (!text || typeof text !== "string") {
-      return NextResponse.json(
-        {
-          error: "No text was provided.",
-        },
-        { status: 400 }
-      );
+    if (!text) {
+      return NextResponse.json({ error: "No text was provided." }, { status: 400 });
     }
 
-    const response = await openai.responses.create({
-      model: "gpt-5-mini",
-      input: [
-        {
-          role: "system",
-          content: `
-You are the intelligence engine for TraceMind.
+    const words = text
+      .toLowerCase()
+      .replace(/[^a-z0-9\s-]/g, " ")
+      .split(/\s+/)
+      .filter((word: string) => word.length > 3);
 
-TraceMind helps users remember information they previously saw,
-received, or saved.
+    const keywords = Array.from(new Set(words)).slice(0, 12);
 
-Analyze the provided information and return ONLY valid JSON.
+    const dateMatch =
+      text.match(/\b\d{1,2}[\/-]\d{1,2}[\/-]\d{2,4}\b/) ||
+      text.match(/\b(?:\d{1,2}\s+)?(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\s+\d{1,2}(?:,\s*\d{4})?\b/i);
 
-Extract:
-
-title
-summary
-category
-important_details
-deadline
-source
-keywords
-
-Category must be one of:
-Scholarship
-Job
-Hackathon
-Course
-Event
-Article
-Message
-Other
-
-Rules:
-- Do not invent information.
-- If a deadline is not present, return null.
-- If a source is not present, return null.
-- important_details should contain the most useful facts.
-- keywords should contain useful search terms.
-- Keep the summary concise.
-          `,
-        },
-        {
-          role: "user",
-          content: text,
-        },
-      ],
+    return NextResponse.json({
+      title: text.split(/\r?\n/).map((x: string) => x.trim()).find(Boolean)?.slice(0, 100) || "Saved memory",
+      summary: summarize(text),
+      category: detectCategory(text),
+      important_details: [],
+      deadline: dateMatch?.[0] || null,
+      source: null,
+      keywords,
+      processing: "local",
     });
-
-    const result = response.output_text;
-
-    let parsed;
-
-    try {
-      parsed = JSON.parse(result);
-    } catch {
-      return NextResponse.json(
-        {
-          error: "AI returned invalid JSON.",
-          raw: result,
-        },
-        { status: 500 }
-      );
-    }
-
-    return NextResponse.json(parsed);
-  } catch (error) {
-    console.error("AI processing error:", error);
-
-    return NextResponse.json(
-      {
-        error: "AI processing failed.",
-      },
-      { status: 500 }
-    );
+  } catch {
+    return NextResponse.json({ error: "Local processing failed." }, { status: 500 });
   }
 }
-

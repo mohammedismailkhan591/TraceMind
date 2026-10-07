@@ -1,834 +1,984 @@
 "use client";
 
-import Link from "next/link";
-import { useState } from "react";
+import { useRef, useState } from "react";
+import AppShell from "../../components/AppShell";
 import { createClient } from "../../lib/supabase";
 
-type ExtractedInfo = {
-  title: string;
-  category: string;
-  deadline: string | null;
-  summary: string;
-  keywords: string[];
-};
+type Mode = "file" | "link" | "text";
 
 function detectCategory(text: string) {
-  const value = text.toLowerCase();
+  const t = text.toLowerCase();
 
-  if (/scholarship|stipend|financial aid|grant|fellowship/.test(value))
-    return "Scholarships";
-
-  if (/job|hiring|vacancy|recruitment|career|employment|internship/.test(value))
-    return "Jobs";
-
-  if (/hackathon|coding challenge|coding competition|programming contest/.test(value))
-    return "Hackathons";
-
-  if (/course|certification|training|workshop|learning program/.test(value))
-    return "Courses";
-
-  if (/conference|webinar|meetup|event|summit/.test(value))
-    return "Events";
-
-  if (/article|blog|publication|research paper/.test(value))
-    return "Articles";
-
-  if (/whatsapp|telegram|message|chat/.test(value))
-    return "Messages";
-
-  if (/notice|document|application form|pdf/.test(value))
-    return "Documents";
+  if (/scholarship|fellowship|stipend/.test(t)) return "Scholarship";
+  if (/internship|job|hiring|vacancy|career/.test(t)) return "Job";
+  if (/hackathon|hackfest|competition/.test(t)) return "Hackathon";
+  if (/course|bootcamp|workshop|class/.test(t)) return "Course";
+  if (/event|conference|meetup|webinar/.test(t)) return "Event";
+  if (/article|blog|research paper/.test(t)) return "Article";
+  if (/whatsapp|message|chat/.test(t)) return "Message";
 
   return "Other";
 }
 
-function extractKeywords(text: string) {
-  const words = text
-    .toLowerCase()
-    .replace(/[^a-z0-9\s]/g, " ")
-    .split(/\s+/)
-    .filter((word) => word.length >= 5);
-
-  const stopWords = new Set([
-    "about",
-    "which",
-    "there",
-    "their",
-    "these",
-    "those",
-    "would",
-    "could",
-    "should",
-    "where",
-    "while",
-    "please",
-    "application",
-    "information",
-    "available",
-  ]);
-
-  return [...new Set(words.filter((word) => !stopWords.has(word)))].slice(
-    0,
-    10
-  );
-}
-
-function extractDeadline(text: string) {
-  const patterns = [
-    /\b(\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4})\b/i,
-    /\b(\d{1,2}\s+(January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{4})\b/i,
-    /\b((January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2},?\s+\d{4})\b/i,
-  ];
-
-  for (const pattern of patterns) {
-    const match = text.match(pattern);
-
-    if (match?.[1]) {
-      const date = new Date(match[1]);
-
-      if (!Number.isNaN(date.getTime())) {
-        return date.toISOString();
-      }
-    }
-  }
-
-  return null;
-}
-
-function createSummary(text: string) {
-  const cleaned = text.replace(/\s+/g, " ").trim();
-
-  if (!cleaned) {
-    return "No readable text was detected.";
-  }
-
-  const sentences = cleaned
-    .split(/(?<=[.!?])\s+/)
-    .filter((sentence) => sentence.length > 20)
-    .slice(0, 2);
-
-  if (sentences.length > 0) {
-    return sentences.join(" ");
-  }
-
-  return cleaned.slice(0, 300);
-}
-
-function extractInformation(text: string, fileName: string): ExtractedInfo {
-  const cleaned = text.trim();
-
-  const lines = cleaned
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter((line) => line.length > 3);
-
-  const title =
-    lines.find(
-      (line) =>
-        line.length >= 5 &&
-        line.length <= 120 &&
-        !/^(page|www\.|http|email|phone|date|time)/i.test(line)
-    ) || fileName.replace(/\.[^/.]+$/, "");
-
-  return {
-    title,
-    category: detectCategory(cleaned),
-    deadline: extractDeadline(cleaned),
-    summary: createSummary(cleaned),
-    keywords: extractKeywords(cleaned),
-  };
-}
-
 export default function CapturePage() {
   const supabase = createClient();
+  const inputRef = useRef<HTMLInputElement>(null);
 
+  const [mode, setMode] = useState<Mode>("file");
   const [file, setFile] = useState<File | null>(null);
   const [title, setTitle] = useState("");
-  const [processing, setProcessing] = useState(false);
+  const [link, setLink] = useState("");
+  const [text, setText] = useState("");
   const [message, setMessage] = useState("");
-  const [extractedText, setExtractedText] = useState("");
-  const [info, setInfo] = useState<ExtractedInfo | null>(null);
+  const [saving, setSaving] = useState(false);
 
-  const processImage = async (selectedFile: File) => {
-    const Tesseract = await import("tesseract.js");
+  const chooseFile = (next?: File) => {
+    if (!next) return;
 
-    const result = await Tesseract.recognize(selectedFile, "eng", {
-      logger: (data) => {
-        if (data.status === "recognizing text") {
-          setMessage(
-            `Reading screenshot... ${Math.round((data.progress || 0) * 100)}%`
-          );
-        }
-      },
-    });
-
-    return result.data.text;
-  };
-
-  const processPdf = async (selectedFile: File) => {
-    const buffer = await selectedFile.arrayBuffer();
-
-    const pdfjsLib = await import("pdfjs-dist");
-
-    const pdf = await pdfjsLib.getDocument({
-      data: buffer,
-    }).promise;
-
-    let fullText = "";
-
-    for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber++) {
-      setMessage(`Reading PDF page ${pageNumber} of ${pdf.numPages}...`);
-
-      const page = await pdf.getPage(pageNumber);
-      const content = await page.getTextContent();
-
-      const pageText = content.items
-        .map((item: any) => item.str || "")
-        .join(" ");
-
-      fullText += pageText + "\n";
-    }
-
-    return fullText;
-  };
-
-  const handleFile = async (selectedFile: File) => {
-    setFile(selectedFile);
-    setMessage("");
-    setExtractedText("");
-    setInfo(null);
-
-    try {
-      setProcessing(true);
-
-      let text = "";
-
-      if (selectedFile.type.startsWith("image/")) {
-        text = await processImage(selectedFile);
-      } else if (selectedFile.type === "application/pdf") {
-        text = await processPdf(selectedFile);
-      } else {
-        setMessage("Please upload an image or PDF.");
-        setProcessing(false);
-        return;
-      }
-
-      setExtractedText(text);
-
-      const extracted = extractInformation(text, selectedFile.name);
-
-      setInfo(extracted);
-
-      if (!title) {
-        setTitle(extracted.title);
-      }
-
-      setMessage("Information extracted successfully.");
-    } catch (error) {
-      console.error(error);
-      setMessage(
-        "The file was uploaded, but automatic text extraction failed."
-      );
-    } finally {
-      setProcessing(false);
-    }
-  };
-
-  const handleUpload = async () => {
-    if (!file) {
-      setMessage("Please select a file first.");
+    if (
+      !next.type.startsWith("image/") &&
+      next.type !== "application/pdf"
+    ) {
+      setMessage("Choose an image or PDF.");
       return;
     }
 
-    try {
-      setProcessing(true);
-      setMessage("Saving your memory...");
+    if (next.size > 10 * 1024 * 1024) {
+      setMessage("Files must be smaller than 10 MB.");
+      return;
+    }
 
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
+    setFile(next);
+    setMessage("");
+  };
+
+  const reset = () => {
+    setFile(null);
+    setTitle("");
+    setLink("");
+    setText("");
+    setMessage("");
+
+    if (inputRef.current) {
+      inputRef.current.value = "";
+    }
+  };
+
+  const save = async () => {
+    setSaving(true);
+    setMessage("");
+
+    try {
+      const { data: auth } = await supabase.auth.getUser();
+      const user = auth.user;
 
       if (!user) {
-        setMessage("Please log in first.");
-        setProcessing(false);
+        throw new Error("Please log in again.");
+      }
+
+      /* ---------------- FILE ---------------- */
+
+      if (mode === "file") {
+        if (!file) {
+          throw new Error("Choose a screenshot or PDF first.");
+        }
+
+        const safeName = file.name.replace(/[^\w.-]/g, "_");
+
+        const path = `${user.id}/${Date.now()}-${safeName}`;
+
+        const { error: uploadError } = await supabase.storage
+          .from("memory-assets")
+          .upload(path, file, {
+            upsert: false,
+          });
+
+        if (uploadError) {
+          throw uploadError;
+        }
+
+        const { data: memory, error: memoryError } = await supabase
+          .from("memories")
+          .insert({
+            user_id: user.id,
+            title: title.trim() || file.name,
+            summary:
+              "Saved file. Open the memory to view the original.",
+            content: "",
+            category:
+              file.type === "application/pdf"
+                ? "Document"
+                : "Image",
+            source_type:
+              file.type === "application/pdf"
+                ? "PDF"
+                : "Screenshot",
+            metadata: {
+              processing: "local",
+              file_name: file.name,
+              mime_type: file.type,
+              file_size: file.size,
+            },
+          })
+          .select("id")
+          .single();
+
+        if (memoryError) {
+          throw memoryError;
+        }
+
+        const { error: assetError } = await supabase
+          .from("memory_assets")
+          .insert({
+            memory_id: memory.id,
+            user_id: user.id,
+            storage_path: path,
+            file_name: file.name,
+            mime_type: file.type,
+            file_size: file.size,
+          });
+
+        if (assetError) {
+          throw assetError;
+        }
+
+        setMessage("Memory saved successfully.");
+        reset();
         return;
       }
 
-      const storagePath = `${user.id}/${Date.now()}-${file.name}`;
+      /* ---------------- LINK ---------------- */
 
-      const { error: uploadError } = await supabase.storage
-        .from("memory-assets")
-        .upload(storagePath, file);
+      if (mode === "link") {
+        const raw = link.trim();
 
-      if (uploadError) {
-        throw uploadError;
+        if (!raw) {
+          throw new Error("Enter a website link.");
+        }
+
+        const url = new URL(
+          /^https?:\/\//i.test(raw)
+            ? raw
+            : `https://${raw}`
+        );
+
+        const { error } = await supabase
+          .from("memories")
+          .insert({
+            user_id: user.id,
+            title: title.trim() || url.hostname,
+            summary: `Saved website: ${url.hostname}`,
+            content: url.toString(),
+            category: "Website",
+            source_type: "Link",
+            source_url: url.toString(),
+            metadata: {
+              processing: "local",
+            },
+          });
+
+        if (error) {
+          throw error;
+        }
+
+        setMessage("Website saved successfully.");
+        reset();
+        return;
       }
 
-      const finalInfo =
-        info ||
-        extractInformation(extractedText, file.name);
+      /* ---------------- TEXT ---------------- */
 
-      const { data: memory, error: memoryError } = await supabase
+      const clean = text.trim();
+
+      if (clean.length < 3) {
+        throw new Error("Enter at least a few words.");
+      }
+
+      const summary = clean
+        .replace(/\s+/g, " ")
+        .slice(0, 220);
+
+      const keywords = Array.from(
+        new Set(
+          clean
+            .toLowerCase()
+            .replace(/[^a-z0-9\s-]/g, " ")
+            .split(/\s+/)
+            .filter((word) => word.length > 3)
+        )
+      ).slice(0, 15);
+
+      const { error } = await supabase
         .from("memories")
         .insert({
           user_id: user.id,
-          title: title.trim() || finalInfo.title,
-          summary: finalInfo.summary,
-          content: extractedText,
-          category: finalInfo.category,
-          source_type: file.type === "application/pdf" ? "PDF" : "Screenshot",
-          deadline: finalInfo.deadline,
+          title: title.trim() || clean.slice(0, 70),
+          summary:
+            summary.length < clean.length
+              ? `${summary}…`
+              : summary,
+          content: clean,
+          category: detectCategory(clean),
+          source_type: "Text",
           metadata: {
-            keywords: finalInfo.keywords,
             processing: "local",
-            text_extracted: Boolean(extractedText.trim()),
+            keywords,
           },
-        })
-        .select()
-        .single();
-
-      if (memoryError) {
-        throw memoryError;
-      }
-
-      const { error: assetError } = await supabase
-        .from("memory_assets")
-        .insert({
-          memory_id: memory.id,
-          user_id: user.id,
-          storage_path: storagePath,
-          file_name: file.name,
-          mime_type: file.type,
-          file_size: file.size,
         });
 
-      if (assetError) {
-        throw assetError;
+      if (error) {
+        throw error;
       }
 
-      setMessage("Memory saved successfully.");
-
-      setFile(null);
-      setTitle("");
-      setExtractedText("");
-      setInfo(null);
-    } catch (error: any) {
-      console.error(error);
-      setMessage(error.message || "Something went wrong.");
+      setMessage("Text memory saved successfully.");
+      reset();
+    } catch (error) {
+      setMessage(
+        error instanceof Error
+          ? error.message
+          : "Something went wrong."
+      );
     } finally {
-      setProcessing(false);
+      setSaving(false);
     }
   };
 
   return (
-    <main className="page">
-      <aside className="sidebar">
-        <div className="logo">T</div>
-
-        <nav>
-          <Link href="/dashboard">⌂</Link>
-          <Link className="active" href="/capture">＋</Link>
-          <Link href="/memories">▣</Link>
-          <Link href="/timeline">◷</Link>
-          <Link href="/reminders">◌</Link>
-        </nav>
-      </aside>
-
-      <section className="content">
-        <div className="header">
+    <AppShell>
+      <main className="capture-page">
+        <header className="capture-header">
           <div>
-            <p className="eyebrow">TRACE YOUR INFORMATION</p>
-            <h1>Capture a memory</h1>
-            <p className="subtitle">
-              Upload something you found and TraceMind will extract useful
-              information from it.
+            <span className="eyebrow">YOUR INFORMATION</span>
+            <h1>Capture</h1>
+            <p>
+              Save something now and find it again whenever you need it.
             </p>
           </div>
-        </div>
 
-        <div className="capture-grid">
-          <div className="upload-card">
-            <div
-              className="drop-zone"
-              onClick={() =>
-                document.getElementById("fileInput")?.click()
-              }
+          <div className="private-badge">
+            <span className="private-dot" />
+            Private workspace
+          </div>
+        </header>
+
+        <section className="capture-container">
+          {/* SOURCE SELECTOR */}
+
+          <div className="source-selector">
+            <button
+              type="button"
+              className={mode === "file" ? "source active" : "source"}
+              onClick={() => {
+                setMode("file");
+                setMessage("");
+              }}
             >
-              <div className="upload-icon">↑</div>
+              <span className="source-icon">
+                <UploadIcon />
+              </span>
 
-              <h2>
-                {file ? file.name : "Drop a screenshot or PDF here"}
-              </h2>
+              <span>
+                <strong>File</strong>
+                <small>Screenshot or PDF</small>
+              </span>
+            </button>
 
-              <p>
-                TraceMind can read text from images and PDFs locally.
-              </p>
+            <button
+              type="button"
+              className={mode === "link" ? "source active" : "source"}
+              onClick={() => {
+                setMode("link");
+                setMessage("");
+              }}
+            >
+              <span className="source-icon">
+                <LinkIcon />
+              </span>
+
+              <span>
+                <strong>Website</strong>
+                <small>Save a useful URL</small>
+              </span>
+            </button>
+
+            <button
+              type="button"
+              className={mode === "text" ? "source active" : "source"}
+              onClick={() => {
+                setMode("text");
+                setMessage("");
+              }}
+            >
+              <span className="source-icon">
+                <TextIcon />
+              </span>
+
+              <span>
+                <strong>Text</strong>
+                <small>Message or note</small>
+              </span>
+            </button>
+          </div>
+
+          {/* MAIN CARD */}
+
+          <section className="capture-card">
+            <div className="card-header">
+              <div>
+                <span className="eyebrow">NEW MEMORY</span>
+
+                <h2>
+                  {mode === "file"
+                    ? "Upload a file"
+                    : mode === "link"
+                    ? "Save a website"
+                    : "Save some text"}
+                </h2>
+              </div>
+
+              <span className="step-label">01</span>
+            </div>
+
+            {/* TITLE */}
+
+            <label className="field">
+              <span>
+                Title <em>Optional</em>
+              </span>
+
+              <input
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                placeholder="Give this memory a useful name"
+              />
+            </label>
+
+            {/* FILE */}
+
+            {mode === "file" && (
+              <div
+                className={`dropzone ${
+                  file ? "has-file" : ""
+                }`}
+                onClick={() => inputRef.current?.click()}
+                onDragOver={(e) => e.preventDefault()}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  chooseFile(e.dataTransfer.files?.[0]);
+                }}
+              >
+                <input
+                  ref={inputRef}
+                  hidden
+                  type="file"
+                  accept="image/*,.pdf,application/pdf"
+                  onChange={(e) =>
+                    chooseFile(e.target.files?.[0])
+                  }
+                />
+
+                <div className="upload-circle">
+                  {file ? <CheckIcon /> : <UploadIcon />}
+                </div>
+
+                <strong>
+                  {file
+                    ? file.name
+                    : "Drop a screenshot or PDF here"}
+                </strong>
+
+                <span>
+                  {file
+                    ? `${(
+                        file.size /
+                        1024 /
+                        1024
+                      ).toFixed(2)} MB · ready to save`
+                    : "or click to browse · maximum 10 MB"}
+                </span>
+
+                {file && (
+                  <button
+                    type="button"
+                    className="change-file"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setFile(null);
+
+                      if (inputRef.current) {
+                        inputRef.current.value = "";
+                      }
+                    }}
+                  >
+                    Choose another file
+                  </button>
+                )}
+              </div>
+            )}
+
+            {/* LINK */}
+
+            {mode === "link" && (
+              <label className="field">
+                <span>Website URL</span>
+
+                <input
+                  value={link}
+                  onChange={(e) => setLink(e.target.value)}
+                  placeholder="https://example.com/..."
+                  type="url"
+                />
+              </label>
+            )}
+
+            {/* TEXT */}
+
+            {mode === "text" && (
+              <label className="field">
+                <span>Information</span>
+
+                <textarea
+                  value={text}
+                  onChange={(e) => setText(e.target.value)}
+                  placeholder="Paste the message, details or information you want to remember..."
+                  rows={9}
+                />
+              </label>
+            )}
+
+            {/* FOOTER */}
+
+            <div className="capture-footer">
+              <div className="message-area">
+                <span className="message-icon">
+                  <LockIcon />
+                </span>
+
+                <p>
+                  {message ||
+                    "Your saved information stays in your private workspace."}
+                </p>
+              </div>
 
               <button
                 type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  document.getElementById("fileInput")?.click();
-                }}
+                className="save-button"
+                onClick={save}
+                disabled={saving}
               >
-                Choose file
+                {saving ? "Saving..." : "Save memory"}
+
+                <ArrowIcon />
               </button>
-
-              <input
-                id="fileInput"
-                type="file"
-                accept="image/*,.pdf"
-                hidden
-                onChange={(e) => {
-                  const selected = e.target.files?.[0];
-
-                  if (selected) {
-                    handleFile(selected);
-                  }
-                }}
-              />
-            </div>
-
-            {file && (
-              <div className="file-row">
-                <div>
-                  <strong>{file.name}</strong>
-                  <span>
-                    {(file.size / 1024 / 1024).toFixed(2)} MB
-                  </span>
-                </div>
-
-                <button
-                  onClick={() => {
-                    setFile(null);
-                    setInfo(null);
-                    setExtractedText("");
-                    setMessage("");
-                  }}
-                >
-                  Remove
-                </button>
-              </div>
-            )}
-          </div>
-
-          <div className="details-card">
-            <p className="eyebrow">MEMORY DETAILS</p>
-
-            <label>Title</label>
-
-            <input
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              placeholder="Give this memory a name"
-            />
-
-            {info && (
-              <div className="analysis">
-                <div>
-                  <span>Category</span>
-                  <strong>{info.category}</strong>
-                </div>
-
-                <div>
-                  <span>Deadline</span>
-                  <strong>
-                    {info.deadline
-                      ? new Date(info.deadline).toLocaleDateString()
-                      : "Not detected"}
-                  </strong>
-                </div>
-
-                <div>
-                  <span>Keywords</span>
-                  <strong>
-                    {info.keywords.length
-                      ? info.keywords.join(", ")
-                      : "None detected"}
-                  </strong>
-                </div>
-              </div>
-            )}
-
-            {info && (
-              <div className="summary">
-                <span>Automatic summary</span>
-                <p>{info.summary}</p>
-              </div>
-            )}
-
-            <button
-              className="save"
-              disabled={!file || processing}
-              onClick={handleUpload}
-            >
-              {processing ? "Processing..." : "Save to TraceMind"}
-            </button>
-
-            {message && <p className="message">{message}</p>}
-          </div>
-        </div>
-
-        {extractedText && (
-          <section className="text-preview">
-            <div>
-              <p className="eyebrow">EXTRACTED INFORMATION</p>
-              <h2>What TraceMind found</h2>
-            </div>
-
-            <div className="text-box">
-              {extractedText}
             </div>
           </section>
-        )}
-      </section>
+        </section>
+      </main>
 
       <style jsx>{`
-        * {
-          box-sizing: border-box;
-        }
-
-        .page {
+        .capture-page {
           min-height: 100vh;
-          background:
-            radial-gradient(
-              circle at 80% 10%,
-              rgba(99, 102, 241, 0.1),
-              transparent 30%
-            ),
-            #f7f8fc;
-          color: #171923;
+          background: #f7f8fa;
+          color: #17191e;
+          padding: 34px 40px 70px;
         }
 
-        .sidebar {
-          position: fixed;
-          left: 0;
-          top: 0;
-          bottom: 0;
-          width: 82px;
-          background: rgba(255, 255, 255, 0.92);
-          border-right: 1px solid #e7e9f0;
+        .capture-header {
+          max-width: 1080px;
+          margin: 0 auto 28px;
           display: flex;
-          flex-direction: column;
           align-items: center;
-          z-index: 10;
-          backdrop-filter: blur(16px);
-        }
-
-        .logo {
-          width: 42px;
-          height: 42px;
-          margin-top: 24px;
-          border-radius: 13px;
-          display: grid;
-          place-items: center;
-          background: #171923;
-          color: white;
-          font-weight: 800;
-          font-size: 20px;
-        }
-
-        nav {
-          position: absolute;
-          top: 50%;
-          transform: translateY(-50%);
-          display: flex;
-          flex-direction: column;
-          gap: 14px;
-        }
-
-        nav a {
-          width: 46px;
-          height: 46px;
-          border-radius: 14px;
-          display: grid;
-          place-items: center;
-          text-decoration: none;
-          color: #858b9b;
-          font-size: 21px;
-          transition: 0.2s;
-        }
-
-        nav a:hover,
-        nav a.active {
-          background: #eef0ff;
-          color: #4f46e5;
-        }
-
-        .content {
-          margin-left: 82px;
-          padding: 55px 6%;
-          max-width: 1500px;
+          justify-content: space-between;
+          gap: 20px;
         }
 
         .eyebrow {
-          margin: 0 0 9px;
-          font-size: 11px;
+          display: block;
+          color: #9b9fa7;
+          font-size: 9px;
           font-weight: 800;
-          letter-spacing: 0.14em;
-          color: #73798a;
+          letter-spacing: 0.16em;
+          text-transform: uppercase;
         }
 
-        h1 {
+        .capture-header h1 {
+          margin: 7px 0 5px;
+          font-size: 30px;
+          line-height: 1;
+          letter-spacing: -0.05em;
+          font-weight: 750;
+        }
+
+        .capture-header p {
           margin: 0;
-          font-size: clamp(32px, 4vw, 50px);
-          letter-spacing: -0.04em;
+          color: #858990;
+          font-size: 12px;
         }
 
-        .subtitle {
-          margin-top: 12px;
-          color: #73798a;
-          max-width: 650px;
-          line-height: 1.6;
+        .private-badge {
+          display: flex;
+          align-items: center;
+          gap: 7px;
+          padding: 8px 11px;
+          background: #fff;
+          border: 1px solid #e4e5e8;
+          border-radius: 999px;
+          color: #777b83;
+          font-size: 9px;
+          white-space: nowrap;
         }
 
-        .capture-grid {
-          margin-top: 42px;
+        .private-dot {
+          width: 6px;
+          height: 6px;
+          border-radius: 50%;
+          background: #555960;
+        }
+
+        .capture-container {
+          width: min(920px, 100%);
+          margin: 0 auto;
+        }
+
+        /* SOURCE TABS */
+
+        .source-selector {
           display: grid;
-          grid-template-columns: 1.25fr 0.75fr;
-          gap: 22px;
+          grid-template-columns: repeat(3, 1fr);
+          gap: 8px;
+          margin-bottom: 10px;
         }
 
-        .upload-card,
-        .details-card,
-        .text-preview {
-          background: white;
-          border: 1px solid #e7e9f0;
-          border-radius: 24px;
+        .source {
+          display: flex;
+          align-items: center;
+          gap: 11px;
+          min-height: 62px;
+          padding: 10px 13px;
+          border: 1px solid #e3e4e7;
+          border-radius: 13px;
+          background: #fff;
+          color: #70747c;
+          text-align: left;
+          cursor: pointer;
+          transition: 0.15s ease;
+        }
+
+        .source:hover {
+          border-color: #c8cad0;
+        }
+
+        .source.active {
+          background: #17191e;
+          border-color: #17191e;
+          color: #fff;
+        }
+
+        .source-icon {
+          width: 35px;
+          height: 35px;
+          flex: 0 0 35px;
+          display: grid;
+          place-items: center;
+          border-radius: 9px;
+          background: #f1f2f4;
+          color: #62666e;
+        }
+
+        .source.active .source-icon {
+          background: #30333a;
+          color: #fff;
+        }
+
+        .source strong,
+        .source small {
+          display: block;
+        }
+
+        .source strong {
+          font-size: 11px;
+          font-weight: 700;
+        }
+
+        .source small {
+          margin-top: 3px;
+          color: #9a9da4;
+          font-size: 8px;
+        }
+
+        .source.active small {
+          color: #a7abb3;
+        }
+
+        /* CARD */
+
+        .capture-card {
+          background: #fff;
+          border: 1px solid #e3e4e7;
+          border-radius: 17px;
+          padding: 23px;
+          box-shadow: 0 12px 35px rgba(20, 22, 27, 0.035);
+        }
+
+        .card-header {
+          display: flex;
+          align-items: flex-start;
+          justify-content: space-between;
+          margin-bottom: 21px;
+        }
+
+        .card-header h2 {
+          margin: 6px 0 0;
+          font-size: 18px;
+          line-height: 1.2;
+          letter-spacing: -0.035em;
+          font-weight: 750;
+        }
+
+        .step-label {
+          color: #a2a5ac;
+          font-size: 8px;
+          font-weight: 800;
+          letter-spacing: 0.12em;
+        }
+
+        /* FIELDS */
+
+        .field {
+          display: block;
+          margin-bottom: 15px;
+        }
+
+        .field > span {
+          display: block;
+          margin-bottom: 7px;
+          color: #666a72;
+          font-size: 9px;
+          font-weight: 800;
+          letter-spacing: 0.08em;
+          text-transform: uppercase;
+        }
+
+        .field em {
+          margin-left: 4px;
+          color: #afb2b8;
+          font-style: normal;
+          font-weight: 500;
+          text-transform: none;
+          letter-spacing: 0;
+        }
+
+        .field input,
+        .field textarea {
+          width: 100%;
+          box-sizing: border-box;
+          padding: 12px 13px;
+          border: 1px solid #e0e1e4;
+          border-radius: 10px;
+          outline: none;
+          background: #fafafa;
+          color: #17191e;
+          font-family: inherit;
+          font-size: 12px;
+          transition: 0.15s ease;
+        }
+
+        .field textarea {
+          resize: vertical;
+          min-height: 190px;
+          line-height: 1.55;
+        }
+
+        .field input:focus,
+        .field textarea:focus {
+          border-color: #b9bcc2;
+          background: #fff;
+          box-shadow: 0 0 0 3px rgba(23, 25, 30, 0.035);
+        }
+
+        /* DROPZONE */
+
+        .dropzone {
+          min-height: 230px;
+          margin-bottom: 15px;
           padding: 25px;
-          box-shadow: 0 15px 45px rgba(20, 25, 45, 0.05);
-        }
-
-        .drop-zone {
-          min-height: 390px;
-          border: 1.5px dashed #cfd3df;
-          border-radius: 19px;
+          box-sizing: border-box;
           display: flex;
           flex-direction: column;
           align-items: center;
           justify-content: center;
           text-align: center;
-          padding: 30px;
+          border: 1.5px dashed #d5d7db;
+          border-radius: 13px;
+          background: #fafbfc;
           cursor: pointer;
-          transition: 0.2s;
+          transition: 0.18s ease;
         }
 
-        .drop-zone:hover {
-          border-color: #818cf8;
-          background: #fafaff;
+        .dropzone:hover,
+        .dropzone.has-file {
+          border-color: #9da1a8;
+          background: #f7f8f9;
         }
 
-        .upload-icon {
-          width: 58px;
-          height: 58px;
-          border-radius: 18px;
+        .upload-circle {
+          width: 44px;
+          height: 44px;
+          margin-bottom: 11px;
           display: grid;
           place-items: center;
-          background: #f0f1ff;
-          color: #4f46e5;
-          font-size: 27px;
-          margin-bottom: 20px;
+          border-radius: 12px;
+          background: #17191e;
+          color: #fff;
         }
 
-        .drop-zone h2 {
-          margin: 0;
-          font-size: 21px;
-        }
-
-        .drop-zone p {
-          color: #858b9b;
-          max-width: 380px;
-          line-height: 1.5;
-        }
-
-        .drop-zone button,
-        .file-row button {
-          border: 0;
-          border-radius: 11px;
-          padding: 11px 17px;
-          background: #171923;
-          color: white;
-          cursor: pointer;
-        }
-
-        .file-row {
-          margin-top: 15px;
-          padding: 14px;
-          border-radius: 14px;
-          background: #f7f8fc;
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-          gap: 15px;
-        }
-
-        .file-row div {
-          display: flex;
-          flex-direction: column;
-          gap: 4px;
-          min-width: 0;
-        }
-
-        .file-row strong {
+        .dropzone strong {
+          max-width: 90%;
           overflow: hidden;
           text-overflow: ellipsis;
           white-space: nowrap;
-        }
-
-        .file-row span {
-          color: #858b9b;
-          font-size: 12px;
-        }
-
-        .file-row button {
-          background: #eceef4;
-          color: #303442;
-        }
-
-        .details-card {
-          display: flex;
-          flex-direction: column;
-        }
-
-        label {
-          margin-top: 18px;
-          margin-bottom: 8px;
-          font-size: 13px;
-          font-weight: 700;
-        }
-
-        input {
-          width: 100%;
-          border: 1px solid #dfe2eb;
-          border-radius: 12px;
-          padding: 13px 14px;
-          outline: none;
-          font-size: 14px;
-        }
-
-        input:focus {
-          border-color: #818cf8;
-        }
-
-        .analysis {
-          margin-top: 20px;
-          display: grid;
-          gap: 10px;
-        }
-
-        .analysis div {
-          padding: 12px;
-          border-radius: 13px;
-          background: #f7f8fc;
-        }
-
-        .analysis span,
-        .summary span {
-          display: block;
-          color: #858b9b;
           font-size: 11px;
           font-weight: 700;
-          text-transform: uppercase;
-          letter-spacing: 0.06em;
-          margin-bottom: 5px;
         }
 
-        .analysis strong {
-          font-size: 13px;
-          line-height: 1.5;
-          word-break: break-word;
+        .dropzone > span {
+          margin-top: 5px;
+          color: #999da5;
+          font-size: 9px;
         }
 
-        .summary {
-          margin-top: 18px;
-          padding: 15px;
-          background: #fafaff;
-          border-radius: 14px;
-        }
-
-        .summary p {
-          margin: 0;
-          color: #626878;
-          font-size: 13px;
-          line-height: 1.55;
-        }
-
-        .save {
-          margin-top: auto;
-          padding: 14px;
-          border: 0;
-          border-radius: 13px;
-          background: #171923;
-          color: white;
-          font-weight: 700;
+        .change-file {
+          margin-top: 12px;
+          padding: 7px 10px;
+          border: 1px solid #dedfe2;
+          border-radius: 7px;
+          background: #fff;
+          color: #60646b;
+          font-size: 9px;
           cursor: pointer;
         }
 
-        .save:disabled {
-          opacity: 0.4;
-          cursor: not-allowed;
+        .change-file:hover {
+          border-color: #bfc2c7;
         }
 
-        .message {
-          margin: 12px 0 0;
-          font-size: 13px;
-          color: #626878;
-          text-align: center;
+        /* FOOTER */
+
+        .capture-footer {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 15px;
+          padding-top: 16px;
+          border-top: 1px solid #ececef;
         }
 
-        .text-preview {
-          margin-top: 22px;
+        .message-area {
+          min-width: 0;
+          display: flex;
+          align-items: center;
+          gap: 8px;
         }
 
-        .text-preview h2 {
+        .message-icon {
+          width: 26px;
+          height: 26px;
+          flex: 0 0 26px;
+          display: grid;
+          place-items: center;
+          border-radius: 7px;
+          background: #f2f3f5;
+          color: #777b83;
+        }
+
+        .message-area p {
           margin: 0;
-          font-size: 22px;
+          color: #989ca3;
+          font-size: 9px;
+          line-height: 1.5;
         }
 
-        .text-box {
-          margin-top: 18px;
-          max-height: 300px;
-          overflow: auto;
-          white-space: pre-wrap;
-          padding: 18px;
-          background: #f7f8fc;
-          border-radius: 15px;
-          color: #555b6d;
-          font-size: 13px;
-          line-height: 1.6;
+        .save-button {
+          display: inline-flex;
+          align-items: center;
+          gap: 8px;
+          flex: 0 0 auto;
+          padding: 11px 15px;
+          border: 0;
+          border-radius: 9px;
+          background: #17191e;
+          color: #fff;
+          font-family: inherit;
+          font-size: 10px;
+          font-weight: 750;
+          cursor: pointer;
+          transition: 0.15s ease;
         }
 
-        @media (max-width: 900px) {
-          .capture-grid {
+        .save-button:hover {
+          background: #292c32;
+        }
+
+        .save-button:disabled {
+          opacity: 0.55;
+          cursor: wait;
+        }
+
+        /* ICONS */
+
+        svg {
+          width: 17px;
+          height: 17px;
+          display: block;
+        }
+
+        /* MOBILE */
+
+        @media (max-width: 700px) {
+          .capture-page {
+            padding: 23px 15px 50px;
+          }
+
+          .capture-header {
+            align-items: flex-start;
+            margin-bottom: 22px;
+          }
+
+          .capture-header h1 {
+            font-size: 27px;
+          }
+
+          .private-badge {
+            display: none;
+          }
+
+          .source-selector {
             grid-template-columns: 1fr;
           }
-        }
 
-        @media (max-width: 600px) {
-          .sidebar {
-            width: 65px;
+          .source {
+            min-height: 55px;
           }
 
-          .content {
-            margin-left: 65px;
-            padding: 35px 18px;
+          .capture-card {
+            padding: 17px;
+            border-radius: 15px;
           }
 
-          .sidebar .logo {
-            width: 36px;
-            height: 36px;
+          .dropzone {
+            min-height: 205px;
           }
 
-          nav a {
-            width: 40px;
-            height: 40px;
+          .capture-footer {
+            align-items: stretch;
+            flex-direction: column;
           }
 
-          .drop-zone {
-            min-height: 300px;
+          .save-button {
+            width: 100%;
+            justify-content: center;
           }
         }
       `}</style>
-    </main>
+    </AppShell>
+  );
+}
+
+/* ---------------- ICONS ---------------- */
+
+function UploadIcon() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.7"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M12 16V4" />
+      <path d="m7 9 5-5 5 5" />
+      <path d="M5 20h14" />
+    </svg>
+  );
+}
+
+function LinkIcon() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.7"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M10 13a5 5 0 0 0 7.07.07l2-2a5 5 0 0 0-7.07-7.07l-1.15 1.15" />
+      <path d="M14 11a5 5 0 0 0-7.07-.07l-2 2A5 5 0 0 0 7 20l1.15-1.15" />
+    </svg>
+  );
+}
+
+function TextIcon() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.7"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M5 6h14" />
+      <path d="M12 6v13" />
+      <path d="M8 19h8" />
+    </svg>
+  );
+}
+
+function CheckIcon() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="m5 12 4 4L19 6" />
+    </svg>
+  );
+}
+
+function LockIcon() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.7"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <rect x="5" y="10" width="14" height="10" rx="2" />
+      <path d="M8 10V7a4 4 0 0 1 8 0v3" />
+    </svg>
+  );
+}
+
+function ArrowIcon() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M5 12h13" />
+      <path d="m13 6 6 6-6 6" />
+    </svg>
   );
 }

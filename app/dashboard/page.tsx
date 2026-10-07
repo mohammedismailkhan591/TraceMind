@@ -1,26 +1,19 @@
 "use client";
 
-import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
+import AppShell from "../../components/AppShell";
+import SearchBox from "../../components/SearchBox";
+import MemoryCard from "../../components/MemoryCard";
 import { createClient } from "../../lib/supabase";
-
-type Memory = {
-  id: string;
-  title: string;
-  summary: string | null;
-  content: string | null;
-  category: string | null;
-  source_type: string;
-  deadline: string | null;
-  created_at: string;
-};
+import type { Memory } from "../../lib/types";
 
 type Reminder = {
   id: string;
   title: string;
   reminder_at: string;
-  completed: boolean;
   memory_id: string | null;
+  completed: boolean;
 };
 
 export default function Dashboard() {
@@ -33,903 +26,650 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    async function loadDashboard() {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+
+      if (!user) {
+        setLoading(false);
+        return;
+      }
+
+      const displayName =
+        user.user_metadata?.name ||
+        user.user_metadata?.full_name ||
+        user.email?.split("@")[0] ||
+        "there";
+
+      setName(displayName);
+
+      const [{ data: memoryData }, { data: reminderData }] =
+        await Promise.all([
+          supabase
+            .from("memories")
+            .select(
+              "id,title,summary,category,source_type,source_url,deadline,created_at,is_favorite"
+            )
+            .eq("user_id", user.id)
+            .order("created_at", { ascending: false })
+            .limit(20),
+
+          supabase
+            .from("reminders")
+            .select("id,title,reminder_at,memory_id,completed")
+            .eq("user_id", user.id)
+            .eq("completed", false)
+            .order("reminder_at", { ascending: true })
+            .limit(5),
+        ]);
+
+      setMemories((memoryData || []) as Memory[]);
+      setReminders((reminderData || []) as Reminder[]);
+      setLoading(false);
+    }
+
     loadDashboard();
   }, []);
 
-  async function loadDashboard() {
-    setLoading(true);
-
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-
-    if (!user) {
-      setLoading(false);
-      return;
-    }
-
-    const displayName =
-      user.user_metadata?.name ||
-      user.user_metadata?.full_name ||
-      user.email?.split("@")[0] ||
-      "there";
-
-    setName(displayName);
-
-    const { data: memoryData } = await supabase
-      .from("memories")
-      .select(
-        "id,title,summary,content,category,source_type,deadline,created_at"
-      )
-      .eq("user_id", user.id)
-      .order("created_at", { ascending: false });
-
-    const { data: reminderData } = await supabase
-      .from("reminders")
-      .select("*")
-      .eq("user_id", user.id)
-      .eq("completed", false)
-      .order("reminder_at", { ascending: true });
-
-    setMemories(memoryData || []);
-    setReminders(reminderData || []);
-
-    setLoading(false);
-  }
-
-  const searchResults = useMemo(() => {
+  const filteredMemories = useMemo(() => {
     const query = search.trim().toLowerCase();
 
-    if (!query) return [];
+    if (!query) {
+      return memories.slice(0, 4);
+    }
 
     return memories
-      .filter((memory) => {
-        const searchable = `
-          ${memory.title}
-          ${memory.summary || ""}
-          ${memory.content || ""}
-          ${memory.category || ""}
-          ${memory.source_type}
-        `.toLowerCase();
-
-        return searchable.includes(query);
-      })
-      .slice(0, 5);
-  }, [search, memories]);
-
-  const upcomingDeadlines = useMemo(() => {
-    const now = new Date();
-
-    return memories
-      .filter(
-        (memory) =>
-          memory.deadline &&
-          new Date(memory.deadline) >= now
+      .filter((memory) =>
+        [
+          memory.title,
+          memory.summary,
+          memory.category,
+          memory.source_type,
+        ]
+          .filter(Boolean)
+          .join(" ")
+          .toLowerCase()
+          .includes(query)
       )
-      .sort(
-        (a, b) =>
-          new Date(a.deadline!).getTime() -
-          new Date(b.deadline!).getTime()
-      )
-      .slice(0, 4);
-  }, [memories]);
+      .slice(0, 6);
+  }, [memories, search]);
 
-  const capturedToday = memories.filter((memory) => {
-    const date = new Date(memory.created_at);
-    const today = new Date();
+  const todayLabel = new Date().toLocaleDateString("en-IN", {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+  });
 
-    return (
-      date.getDate() === today.getDate() &&
-      date.getMonth() === today.getMonth() &&
-      date.getFullYear() === today.getFullYear()
-    );
-  }).length;
+  const upcomingReminder = reminders[0];
 
   return (
-    <main className="page">
-      <aside className="sidebar">
-        <div className="logo">T</div>
-
-        <nav>
-          <Link className="active" href="/dashboard">
-            ⌂
-          </Link>
-
-          <Link href="/capture">＋</Link>
-
-          <Link href="/memories">▣</Link>
-
-          <Link href="/timeline">◷</Link>
-
-          <Link href="/reminders">◌</Link>
-        </nav>
-      </aside>
-
-      <section className="content">
-        <header>
+    <AppShell>
+      <main className="dashboard">
+        {/* HEADER */}
+        <header className="dashboard-header">
           <div>
-            <p className="eyebrow">YOUR MEMORY ENGINE</p>
+            <p className="eyebrow">DASHBOARD</p>
 
             <h1>
-              Good to see you, {name}.
+              Welcome back, {name.split(" ")[0]}
             </h1>
 
-            <p className="subtitle">
-              Find something you remember, or capture something new.
-            </p>
+            <p className="date-line">{todayLabel}</p>
           </div>
 
-          <Link href="/capture" className="captureButton">
-            + Capture
+          <Link href="/capture" className="capture-button">
+            Capture
           </Link>
         </header>
 
-        <section className="memorySearch">
-          <div className="searchIcon">⌕</div>
+        {/* SEARCH */}
+        <section className="search-panel">
+          <div className="search-copy">
+            <p className="eyebrow">YOUR MEMORY</p>
 
-          <div className="searchContent">
-            <p>What are you trying to remember?</p>
+            <h2>What are you trying to remember?</h2>
 
-            <input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Try a keyword, phrase, topic, or detail..."
-            />
+            <p>
+              Search by anything you remember about the information.
+            </p>
           </div>
 
-          {search && (
-            <button
-              className="clearButton"
-              onClick={() => setSearch("")}
-            >
-              ×
-            </button>
+          <SearchBox
+            value={search}
+            onChange={setSearch}
+            placeholder="That scholarship I saw..."
+          />
+        </section>
+
+        {/* RECENT MEMORIES */}
+        <section className="memories-section">
+          <div className="section-heading">
+            <div>
+              <p className="eyebrow">
+                {search ? "SEARCH RESULTS" : "RECENTLY SAVED"}
+              </p>
+
+              <h2>
+                {search ? "Results" : "Your memories"}
+              </h2>
+            </div>
+
+            <Link href="/memories" className="text-link">
+              View all
+            </Link>
+          </div>
+
+          {loading ? (
+            <div className="loading-box">
+              <span className="spinner" />
+              <span>Loading your memories...</span>
+            </div>
+          ) : filteredMemories.length > 0 ? (
+            <div className="memory-grid">
+              {filteredMemories.map((memory) => (
+                <MemoryCard
+                  key={memory.id}
+                  memory={memory}
+                />
+              ))}
+            </div>
+          ) : (
+            <div className="empty-box">
+              <h3>
+                {search
+                  ? "No memories found"
+                  : "Nothing saved yet"}
+              </h3>
+
+              <p>
+                {search
+                  ? "Try using different words or a broader description."
+                  : "Capture something you want TraceMind to remember."}
+              </p>
+
+              {!search && (
+                <Link
+                  href="/capture"
+                  className="empty-link"
+                >
+                  Capture your first memory
+                </Link>
+              )}
+            </div>
           )}
         </section>
 
-        {search && (
-          <section className="searchResults">
-            <div className="sectionHeader">
-              <div>
-                <p className="eyebrow">MEMORY SEARCH</p>
-                <h2>
-                  {searchResults.length}{" "}
-                  {searchResults.length === 1
-                    ? "match"
-                    : "matches"}{" "}
-                  found
-                </h2>
-              </div>
-
-              <Link href="/memories">
-                View all
-              </Link>
-            </div>
-
-            {searchResults.length === 0 ? (
-              <div className="noResults">
-                <span>⌕</span>
-                <div>
-                  <strong>Nothing found yet</strong>
-                  <p>
-                    Try another word or capture more information.
-                  </p>
-                </div>
-              </div>
-            ) : (
-              <div className="resultList">
-                {searchResults.map((memory) => (
-                  <Link
-                    key={memory.id}
-                    href={`/memories/${memory.id}`}
-                    className="resultCard"
-                  >
-                    <div className="resultIcon">
-                      {memory.source_type === "PDF"
-                        ? "PDF"
-                        : "IMG"}
-                    </div>
-
-                    <div className="resultInfo">
-                      <strong>{memory.title}</strong>
-
-                      <p>
-                        {memory.summary ||
-                          memory.content?.slice(0, 140) ||
-                          "No description available."}
-                      </p>
-
-                      <div>
-                        <span>
-                          {memory.category || "Other"}
-                        </span>
-
-                        <span>
-                          {new Date(
-                            memory.created_at
-                          ).toLocaleDateString()}
-                        </span>
-                      </div>
-                    </div>
-
-                    <span className="arrow">→</span>
-                  </Link>
-                ))}
-              </div>
-            )}
-          </section>
-        )}
-
-        <section className="quickCapture">
-          <div className="sectionHeader">
+        {/* BOTTOM AREA */}
+        <section className="bottom-grid">
+          {/* CAPTURE */}
+          <div className="capture-panel">
             <div>
               <p className="eyebrow">CAPTURE</p>
-              <h2>Save something</h2>
+
+              <h2>Save something you found.</h2>
+
+              <p>
+                Add a screenshot, document, website or text.
+                TraceMind will organize it for you.
+              </p>
             </div>
-          </div>
 
-          <div className="captureOptions">
-            <Link href="/capture" className="captureOption">
-              <div>▧</div>
-              <strong>Screenshot</strong>
-              <span>Read text from an image</span>
-            </Link>
-
-            <Link href="/capture" className="captureOption">
-              <div>□</div>
-              <strong>PDF</strong>
-              <span>Extract information from a document</span>
-            </Link>
-
-            <Link href="/capture" className="captureOption">
-              <div>＋</div>
-              <strong>Something else</strong>
-              <span>Capture another memory</span>
+            <Link
+              href="/capture"
+              className="secondary-button"
+            >
+              Open Capture
             </Link>
           </div>
-        </section>
 
-        <section className="dashboardGrid">
-          <div className="panel">
-            <div className="sectionHeader">
+          {/* REMINDER */}
+          <div className="reminder-panel">
+            <div className="section-heading small">
               <div>
-                <p className="eyebrow">RECENTLY SAVED</p>
-                <h2>Your latest memories</h2>
+                <p className="eyebrow">REMINDERS</p>
+
+                <h2>Upcoming</h2>
               </div>
 
-              <Link href="/memories">
+              <Link
+                href="/reminders"
+                className="text-link"
+              >
                 View all
               </Link>
             </div>
 
-            {loading ? (
-              <div className="emptySmall">
-                Loading...
-              </div>
-            ) : memories.length === 0 ? (
-              <div className="emptySmall">
-                <strong>No memories yet.</strong>
+            {upcomingReminder ? (
+              <div className="reminder-content">
+                <h3>{upcomingReminder.title}</h3>
+
                 <p>
-                  Capture your first piece of information.
+                  {new Date(
+                    upcomingReminder.reminder_at
+                  ).toLocaleDateString("en-IN", {
+                    day: "numeric",
+                    month: "long",
+                    year: "numeric",
+                  })}
                 </p>
+
+                <Link href="/reminders">
+                  Open reminder
+                </Link>
               </div>
             ) : (
-              <div className="recentList">
-                {memories.slice(0, 5).map((memory) => (
-                  <Link
-                    key={memory.id}
-                    href={`/memories/${memory.id}`}
-                    className="recentItem"
-                  >
-                    <div className="recentDot" />
+              <div className="no-reminder">
+                <h3>Nothing needs your attention.</h3>
 
-                    <div>
-                      <strong>{memory.title}</strong>
-
-                      <p>
-                        {memory.category || "Other"} ·{" "}
-                        {new Date(
-                          memory.created_at
-                        ).toLocaleDateString()}
-                      </p>
-                    </div>
-
-                    <span>→</span>
-                  </Link>
-                ))}
+                <p>
+                  You have no upcoming reminders.
+                </p>
               </div>
             )}
           </div>
-
-          <div className="sidePanels">
-            <div className="panel">
-              <div className="sectionHeader">
-                <div>
-                  <p className="eyebrow">NEEDS ATTENTION</p>
-                  <h2>Upcoming deadlines</h2>
-                </div>
-
-                <Link href="/reminders">
-                  All
-                </Link>
-              </div>
-
-              {upcomingDeadlines.length === 0 ? (
-                <div className="emptySmall">
-                  <strong>No upcoming deadlines</strong>
-                  <p>
-                    Deadlines detected from your memories will appear here.
-                  </p>
-                </div>
-              ) : (
-                <div className="deadlineList">
-                  {upcomingDeadlines.map((memory) => (
-                    <Link
-                      key={memory.id}
-                      href={`/memories/${memory.id}`}
-                      className="deadlineItem"
-                    >
-                      <div>
-                        <strong>{memory.title}</strong>
-                        <span>
-                          {new Date(
-                            memory.deadline!
-                          ).toLocaleDateString()}
-                        </span>
-                      </div>
-
-                      <span>→</span>
-                    </Link>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            <div className="miniStats">
-              <div>
-                <span>Memories</span>
-                <strong>{memories.length}</strong>
-              </div>
-
-              <div>
-                <span>Captured today</span>
-                <strong>{capturedToday}</strong>
-              </div>
-
-              <div>
-                <span>Reminders</span>
-                <strong>{reminders.length}</strong>
-              </div>
-            </div>
-          </div>
         </section>
-      </section>
+      </main>
 
       <style jsx>{`
-        * {
-          box-sizing: border-box;
-        }
-
-        .page {
+        .dashboard {
           min-height: 100vh;
-          background:
-            radial-gradient(
-              circle at 80% 0%,
-              rgba(99, 102, 241, 0.09),
-              transparent 30%
-            ),
-            #f7f8fc;
-          color: #171923;
+          padding: 48px 48px 80px;
+          background: #f7f7f5;
+          color: #18191c;
         }
 
-        .sidebar {
-          position: fixed;
-          left: 0;
-          top: 0;
-          bottom: 0;
-          width: 82px;
-          background: rgba(255, 255, 255, 0.94);
-          border-right: 1px solid #e7e9f0;
-          display: flex;
-          align-items: center;
-          flex-direction: column;
-          z-index: 20;
+        .dashboard-header,
+        .search-panel,
+        .memories-section,
+        .bottom-grid {
+          width: 100%;
+          max-width: 1180px;
+          margin-left: auto;
+          margin-right: auto;
         }
 
-        .logo {
-          width: 42px;
-          height: 42px;
-          margin-top: 24px;
-          border-radius: 13px;
-          background: #171923;
-          color: white;
-          display: grid;
-          place-items: center;
-          font-weight: 800;
-          font-size: 20px;
-        }
+        /* HEADER */
 
-        nav {
-          position: absolute;
-          top: 50%;
-          transform: translateY(-50%);
-          display: flex;
-          flex-direction: column;
-          gap: 14px;
-        }
-
-        nav a {
-          width: 46px;
-          height: 46px;
-          border-radius: 14px;
-          display: grid;
-          place-items: center;
-          color: #858b9b;
-          text-decoration: none;
-          font-size: 21px;
-          transition: 0.2s;
-        }
-
-        nav a:hover,
-        nav a.active {
-          background: #eef0ff;
-          color: #4f46e5;
-        }
-
-        .content {
-          margin-left: 82px;
-          padding: 55px 6%;
-          max-width: 1500px;
-        }
-
-        header {
+        .dashboard-header {
           display: flex;
           align-items: flex-end;
           justify-content: space-between;
-          gap: 25px;
+          gap: 30px;
+          margin-bottom: 38px;
         }
 
         .eyebrow {
-          margin: 0 0 8px;
-          color: #73798a;
-          font-size: 11px;
-          font-weight: 800;
-          letter-spacing: 0.14em;
-        }
-
-        h1 {
           margin: 0;
-          font-size: clamp(32px, 4vw, 50px);
-          letter-spacing: -0.04em;
+          color: #96989d;
+          font-size: 9px;
+          font-weight: 800;
+          letter-spacing: 0.16em;
         }
 
-        .subtitle {
-          margin: 12px 0 0;
-          color: #73798a;
-        }
-
-        .captureButton {
-          padding: 13px 18px;
-          border-radius: 12px;
-          background: #171923;
-          color: white;
-          text-decoration: none;
+        .dashboard-header h1 {
+          margin: 9px 0 5px;
+          font-size: clamp(30px, 4vw, 42px);
+          line-height: 1;
+          letter-spacing: -0.055em;
           font-weight: 700;
+        }
+
+        .date-line {
+          margin: 0;
+          color: #8d9095;
+          font-size: 11px;
+        }
+
+        .capture-button {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          min-width: 96px;
+          padding: 11px 18px;
+          border-radius: 8px;
+          background: #18191c;
+          color: #ffffff;
+          text-decoration: none;
+          font-size: 11px;
+          font-weight: 700;
+          transition:
+            transform 0.18s ease,
+            opacity 0.18s ease;
+        }
+
+        .capture-button:hover {
+          transform: translateY(-1px);
+          opacity: 0.88;
+        }
+
+        /* SEARCH */
+
+        .search-panel {
+          padding: 34px;
+          background: #ffffff;
+          border: 1px solid #e4e4e1;
+          border-radius: 14px;
+        }
+
+        .search-copy h2 {
+          margin: 9px 0 6px;
+          font-size: clamp(24px, 3vw, 32px);
+          line-height: 1.1;
+          letter-spacing: -0.045em;
+        }
+
+        .search-copy p:last-child {
+          margin: 0 0 22px;
+          color: #898c91;
+          font-size: 11px;
+          line-height: 1.5;
+        }
+
+        /* MEMORIES */
+
+        .memories-section {
+          margin-top: 48px;
+        }
+
+        .section-heading {
+          display: flex;
+          align-items: flex-end;
+          justify-content: space-between;
+          gap: 20px;
+          margin-bottom: 16px;
+        }
+
+        .section-heading h2 {
+          margin: 5px 0 0;
+          font-size: 19px;
+          line-height: 1.2;
+          letter-spacing: -0.035em;
+        }
+
+        .text-link {
+          color: #686b70;
+          font-size: 10px;
+          font-weight: 700;
+          text-decoration: none;
           white-space: nowrap;
         }
 
-        .memorySearch {
-          margin-top: 38px;
-          min-height: 105px;
-          background: #171923;
-          border-radius: 24px;
-          padding: 24px 27px;
-          color: white;
+        .text-link:hover {
+          color: #18191c;
+        }
+
+        .memory-grid {
+          display: grid;
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+          gap: 12px;
+        }
+
+        /* LOADING */
+
+        .loading-box {
+          min-height: 190px;
           display: flex;
           align-items: center;
-          gap: 18px;
-          box-shadow: 0 20px 50px rgba(23, 25, 35, 0.13);
+          justify-content: center;
+          gap: 10px;
+          background: #ffffff;
+          border: 1px solid #e4e4e1;
+          border-radius: 12px;
+          color: #92959a;
+          font-size: 10px;
         }
 
-        .searchIcon {
-          width: 48px;
-          height: 48px;
-          border-radius: 15px;
-          background: rgba(255, 255, 255, 0.1);
-          display: grid;
-          place-items: center;
-          font-size: 25px;
-          flex-shrink: 0;
-        }
-
-        .searchContent {
-          flex: 1;
-        }
-
-        .searchContent p {
-          margin: 0 0 6px;
-          font-size: 12px;
-          color: #bfc3cf;
-        }
-
-        .searchContent input {
-          width: 100%;
-          border: 0;
-          outline: 0;
-          background: transparent;
-          color: white;
-          font-size: 19px;
-        }
-
-        .searchContent input::placeholder {
-          color: #858997;
-        }
-
-        .clearButton {
-          border: 0;
-          background: rgba(255, 255, 255, 0.1);
-          color: white;
-          width: 32px;
-          height: 32px;
+        .spinner {
+          width: 18px;
+          height: 18px;
+          border: 2px solid #e3e3e0;
+          border-top-color: #18191c;
           border-radius: 50%;
-          cursor: pointer;
-          font-size: 20px;
+          animation: spin 0.8s linear infinite;
         }
 
-        .searchResults {
-          margin-top: 24px;
-          background: white;
-          border: 1px solid #e7e9f0;
-          border-radius: 22px;
-          padding: 22px;
+        @keyframes spin {
+          to {
+            transform: rotate(360deg);
+          }
         }
 
-        .sectionHeader {
-          display: flex;
-          justify-content: space-between;
-          align-items: flex-end;
-          gap: 20px;
+        /* EMPTY */
+
+        .empty-box {
+          padding: 48px 30px;
+          background: #ffffff;
+          border: 1px dashed #d6d6d3;
+          border-radius: 12px;
+          text-align: center;
         }
 
-        .sectionHeader h2 {
+        .empty-box h3 {
           margin: 0;
-          font-size: 21px;
+          font-size: 14px;
           letter-spacing: -0.02em;
         }
 
-        .sectionHeader a {
-          color: #4f46e5;
+        .empty-box p {
+          max-width: 350px;
+          margin: 8px auto 17px;
+          color: #92959a;
+          font-size: 10px;
+          line-height: 1.55;
+        }
+
+        .empty-link {
+          color: #18191c;
+          font-size: 10px;
+          font-weight: 700;
           text-decoration: none;
-          font-size: 13px;
+        }
+
+        /* BOTTOM */
+
+        .bottom-grid {
+          display: grid;
+          grid-template-columns: 1fr 360px;
+          gap: 14px;
+          margin-top: 48px;
+        }
+
+        .capture-panel,
+        .reminder-panel {
+          min-width: 0;
+          padding: 25px;
+          background: #ffffff;
+          border: 1px solid #e4e4e1;
+          border-radius: 14px;
+        }
+
+        .capture-panel {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 30px;
+        }
+
+        .capture-panel h2 {
+          margin: 7px 0 7px;
+          font-size: 18px;
+          letter-spacing: -0.035em;
+        }
+
+        .capture-panel p {
+          max-width: 460px;
+          margin: 0;
+          color: #898c91;
+          font-size: 10px;
+          line-height: 1.6;
+        }
+
+        .secondary-button {
+          flex: 0 0 auto;
+          padding: 10px 14px;
+          border: 1px solid #dcdcd9;
+          border-radius: 8px;
+          color: #18191c;
+          text-decoration: none;
+          font-size: 10px;
           font-weight: 700;
         }
 
-        .resultList {
-          margin-top: 17px;
-          display: grid;
-          gap: 9px;
+        .secondary-button:hover {
+          border-color: #18191c;
         }
 
-        .resultCard {
-          display: flex;
-          align-items: center;
-          gap: 13px;
-          padding: 13px;
-          border: 1px solid #eceef3;
-          border-radius: 14px;
-          text-decoration: none;
-          color: #171923;
-          transition: 0.2s;
+        .section-heading.small {
+          margin-bottom: 20px;
         }
 
-        .resultCard:hover {
-          border-color: #cdd0ff;
-          background: #fafaff;
+        .section-heading.small h2 {
+          font-size: 17px;
         }
 
-        .resultIcon {
-          width: 43px;
-          height: 43px;
-          border-radius: 12px;
-          background: #f0f1ff;
-          color: #4f46e5;
-          display: grid;
-          place-items: center;
-          font-size: 10px;
-          font-weight: 800;
-          flex-shrink: 0;
+        .reminder-content {
+          padding-top: 2px;
         }
 
-        .resultInfo {
-          flex: 1;
-          min-width: 0;
-        }
-
-        .resultInfo strong {
-          display: block;
-          font-size: 14px;
-        }
-
-        .resultInfo p {
-          margin: 4px 0;
-          color: #777d8c;
-          font-size: 12px;
-          white-space: nowrap;
-          overflow: hidden;
-          text-overflow: ellipsis;
-        }
-
-        .resultInfo div {
-          display: flex;
-          gap: 12px;
-          color: #999eab;
-          font-size: 10px;
-        }
-
-        .arrow {
-          color: #9ba0ad;
-        }
-
-        .noResults {
-          margin-top: 16px;
-          padding: 18px;
-          border-radius: 14px;
-          background: #f8f8fb;
-          display: flex;
-          gap: 13px;
-          align-items: center;
-        }
-
-        .noResults > span {
-          font-size: 25px;
-          color: #818cf8;
-        }
-
-        .noResults strong {
+        .reminder-content h3 {
+          margin: 0 0 6px;
           font-size: 13px;
-        }
-
-        .noResults p {
-          margin: 4px 0 0;
-          color: #858b9b;
-          font-size: 12px;
-        }
-
-        .quickCapture {
-          margin-top: 32px;
-        }
-
-        .captureOptions {
-          margin-top: 16px;
-          display: grid;
-          grid-template-columns: repeat(3, 1fr);
-          gap: 13px;
-        }
-
-        .captureOption {
-          padding: 18px;
-          background: white;
-          border: 1px solid #e7e9f0;
-          border-radius: 18px;
-          text-decoration: none;
-          color: #171923;
-          transition: 0.2s;
-        }
-
-        .captureOption:hover {
-          transform: translateY(-2px);
-          box-shadow: 0 12px 30px rgba(20, 25, 45, 0.06);
-        }
-
-        .captureOption > div {
-          width: 38px;
-          height: 38px;
-          border-radius: 11px;
-          background: #f0f1ff;
-          color: #4f46e5;
-          display: grid;
-          place-items: center;
-          margin-bottom: 12px;
-        }
-
-        .captureOption strong {
-          display: block;
-          font-size: 14px;
-        }
-
-        .captureOption span {
-          display: block;
-          margin-top: 5px;
-          color: #858b9b;
-          font-size: 11px;
           line-height: 1.4;
         }
 
-        .dashboardGrid {
-          margin-top: 32px;
-          display: grid;
-          grid-template-columns: 1.3fr 0.7fr;
-          gap: 18px;
-        }
-
-        .panel {
-          background: white;
-          border: 1px solid #e7e9f0;
-          border-radius: 21px;
-          padding: 21px;
-        }
-
-        .recentList {
-          margin-top: 17px;
-        }
-
-        .recentItem {
-          display: flex;
-          align-items: center;
-          gap: 12px;
-          padding: 13px 4px;
-          border-bottom: 1px solid #f0f1f4;
-          text-decoration: none;
-          color: #171923;
-        }
-
-        .recentItem:last-child {
-          border-bottom: 0;
-        }
-
-        .recentDot {
-          width: 9px;
-          height: 9px;
-          border-radius: 50%;
-          background: #818cf8;
-          flex-shrink: 0;
-        }
-
-        .recentItem div {
-          flex: 1;
-          min-width: 0;
-        }
-
-        .recentItem strong {
-          display: block;
-          font-size: 13px;
-          white-space: nowrap;
-          overflow: hidden;
-          text-overflow: ellipsis;
-        }
-
-        .recentItem p {
-          margin: 4px 0 0;
-          color: #999eaa;
+        .reminder-content p {
+          margin: 0;
+          color: #898c91;
           font-size: 10px;
         }
 
-        .recentItem > span {
-          color: #a1a5b0;
-        }
-
-        .sidePanels {
-          display: flex;
-          flex-direction: column;
-          gap: 18px;
-        }
-
-        .deadlineList {
+        .reminder-content a {
+          display: inline-block;
           margin-top: 17px;
-        }
-
-        .deadlineItem {
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-          gap: 10px;
-          padding: 13px 0;
-          border-bottom: 1px solid #f0f1f4;
-          text-decoration: none;
-          color: #171923;
-        }
-
-        .deadlineItem:last-child {
-          border-bottom: 0;
-        }
-
-        .deadlineItem strong {
-          display: block;
-          font-size: 12px;
-        }
-
-        .deadlineItem div span {
-          display: block;
-          margin-top: 4px;
-          color: #4f46e5;
-          font-size: 10px;
-        }
-
-        .emptySmall {
-          margin-top: 16px;
-          padding: 18px;
-          background: #f8f8fb;
-          border-radius: 14px;
-          color: #777d8c;
-          font-size: 12px;
-        }
-
-        .emptySmall strong {
-          color: #303442;
-        }
-
-        .emptySmall p {
-          margin: 5px 0 0;
-        }
-
-        .miniStats {
-          display: grid;
-          grid-template-columns: 1fr 1fr 1fr;
-          gap: 9px;
-        }
-
-        .miniStats div {
-          background: white;
-          border: 1px solid #e7e9f0;
-          border-radius: 15px;
-          padding: 15px;
-        }
-
-        .miniStats span {
-          display: block;
-          color: #858b9b;
+          color: #18191c;
           font-size: 9px;
+          font-weight: 700;
+          text-decoration: none;
         }
 
-        .miniStats strong {
-          display: block;
-          margin-top: 7px;
-          font-size: 22px;
+        .no-reminder {
+          padding-top: 2px;
         }
 
-        @media (max-width: 950px) {
-          .dashboardGrid {
+        .no-reminder h3 {
+          margin: 0 0 6px;
+          font-size: 12px;
+        }
+
+        .no-reminder p {
+          margin: 0;
+          color: #92959a;
+          font-size: 10px;
+        }
+
+        /* TABLET */
+
+        @media (max-width: 900px) {
+          .dashboard {
+            padding: 36px 28px 70px;
+          }
+
+          .bottom-grid {
             grid-template-columns: 1fr;
           }
-
-          .sidePanels {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-          }
         }
 
-        @media (max-width: 700px) {
-          .sidebar {
-            width: 65px;
+        /* MOBILE */
+
+        @media (max-width: 650px) {
+          .dashboard {
+            padding: 28px 16px 60px;
           }
 
-          .content {
-            margin-left: 65px;
-            padding: 35px 18px;
-          }
-
-          header {
-            flex-direction: column;
+          .dashboard-header {
             align-items: flex-start;
+            margin-bottom: 28px;
           }
 
-          .captureOptions {
+          .dashboard-header h1 {
+            font-size: 27px;
+          }
+
+          .date-line {
+            font-size: 10px;
+          }
+
+          .capture-button {
+            min-width: auto;
+            padding: 9px 13px;
+            font-size: 10px;
+          }
+
+          .search-panel {
+            padding: 25px 20px;
+            border-radius: 12px;
+          }
+
+          .search-copy h2 {
+            font-size: 23px;
+          }
+
+          .search-copy p:last-child {
+            margin-bottom: 19px;
+          }
+
+          .memories-section {
+            margin-top: 36px;
+          }
+
+          .section-heading h2 {
+            font-size: 17px;
+          }
+
+          .memory-grid {
             grid-template-columns: 1fr;
           }
 
-          .sidePanels {
-            grid-template-columns: 1fr;
+          .bottom-grid {
+            margin-top: 36px;
           }
 
-          .memorySearch {
-            padding: 19px;
+          .capture-panel,
+          .reminder-panel {
+            padding: 21px;
           }
 
-          .searchContent input {
-            font-size: 15px;
+          .capture-panel {
+            align-items: flex-start;
+            flex-direction: column;
+            gap: 18px;
+          }
+
+          .secondary-button {
+            width: 100%;
+            text-align: center;
+          }
+        }
+
+        @media (max-width: 420px) {
+          .dashboard-header h1 {
+            font-size: 24px;
+          }
+
+          .dashboard-header {
+            gap: 12px;
+          }
+
+          .capture-button {
+            padding: 8px 11px;
+          }
+
+          .search-copy h2 {
+            font-size: 21px;
           }
         }
       `}</style>
-    </main>
+    </AppShell>
   );
 }

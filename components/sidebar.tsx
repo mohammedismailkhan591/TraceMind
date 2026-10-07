@@ -1,370 +1,395 @@
-
 "use client";
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
+const items = [
+  {
+    label: "Dashboard",
+    href: "/dashboard",
+    icon: (
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <rect x="3.5" y="3.5" width="7" height="7" rx="1.5" />
+        <rect x="13.5" y="3.5" width="7" height="7" rx="1.5" />
+        <rect x="3.5" y="13.5" width="7" height="7" rx="1.5" />
+        <rect x="13.5" y="13.5" width="7" height="7" rx="1.5" />
+      </svg>
+    ),
+  },
+  {
+    label: "Capture",
+    href: "/capture",
+    icon: (
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M12 5v14M5 12h14" />
+      </svg>
+    ),
+  },
+  {
+    label: "Memories",
+    href: "/memories",
+    icon: (
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <rect x="4" y="3.5" width="16" height="17" rx="2.5" />
+        <path d="M8 8h8M8 12h8M8 16h5" />
+      </svg>
+    ),
+  },
+  {
+    label: "Timeline",
+    href: "/timeline",
+    icon: (
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M6 4v16M6 7h7M6 17h9" />
+        <circle cx="17" cy="7" r="2" />
+        <circle cx="19" cy="17" r="2" />
+      </svg>
+    ),
+  },
+  {
+    label: "Reminders",
+    href: "/reminders",
+    icon: (
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M18 9a6 6 0 0 0-12 0c0 7-3 7-3 8h18c0-1-3-1-3-8" />
+        <path d="M10 21h4" />
+      </svg>
+    ),
+  },
+];
+
 export default function Sidebar() {
   const pathname = usePathname();
 
-  const isActive = (path: string) => {
-    if (path === "/dashboard") {
-      return pathname === "/dashboard";
-    }
-
-    return pathname.startsWith(path);
-  };
+  const active = (href: string) =>
+    href === "/dashboard"
+      ? pathname === "/dashboard"
+      : pathname.startsWith(href);
 
   return (
     <aside className="tm-sidebar">
-      {/* LOGO */}
-      <div className="tm-sidebar-logo">
-        <div className="tm-logo-mark">T</div>
-        <span>TraceMind</span>
+      <div className="tm-brand">
+        <div className="tm-brand-mark">T</div>
+        <div className="tm-brand-name">Trace<span>Mind</span></div>
       </div>
 
-      {/* WORKSPACE */}
-      <div className="tm-workspace-label">WORKSPACE</div>
+      <div className="tm-nav-label">WORKSPACE</div>
 
-      {/* NAVIGATION */}
-      <nav className="tm-sidebar-nav">
-        {/* HOME */}
-        <Link
-          href="/dashboard"
-          className={`tm-nav-link ${
-            isActive("/dashboard") ? "tm-active" : ""
-          }`}
-        >
-          <span className="tm-nav-icon">
-            <svg viewBox="0 0 24 24" aria-hidden="true">
-              <path d="M3 10.5 12 3l9 7.5" />
-              <path d="M5.5 9.5V21h13V9.5" />
-              <path d="M9.5 21v-6h5v6" />
-            </svg>
-          </span>
-          <span>Home</span>
-        </Link>
-
-        {/* CAPTURE */}
-        <Link
-          href="/capture"
-          className={`tm-nav-link ${
-            isActive("/capture") ? "tm-active" : ""
-          }`}
-        >
-          <span className="tm-nav-icon">
-            <svg viewBox="0 0 24 24" aria-hidden="true">
-              <path d="M12 5v14" />
-              <path d="M5 12h14" />
-            </svg>
-          </span>
-          <span>Capture</span>
-        </Link>
-
-        {/* MEMORIES */}
-        <Link
-          href="/memories"
-          className={`tm-nav-link ${
-            isActive("/memories") ? "tm-active" : ""
-          }`}
-        >
-          <span className="tm-nav-icon">
-            <svg viewBox="0 0 24 24" aria-hidden="true">
-              <rect x="4" y="4" width="16" height="16" rx="2" />
-              <path d="M8 8h8" />
-              <path d="M8 12h8" />
-              <path d="M8 16h5" />
-            </svg>
-          </span>
-          <span>Memories</span>
-        </Link>
-
-        {/* TIMELINE */}
-        <Link
-          href="/Timeline"
-          className={`tm-nav-link ${
-            isActive("/Timeline") ? "tm-active" : ""
-          }`}
-        >
-          <span className="tm-nav-icon">
-            <svg viewBox="0 0 24 24" aria-hidden="true">
-              <path d="M5 5v14" />
-              <path d="M5 8h7" />
-              <path d="M5 16h10" />
-              <circle cx="16" cy="8" r="2" />
-              <circle cx="18" cy="16" r="2" />
-            </svg>
-          </span>
-          <span>Timeline</span>
-        </Link>
-
-        {/* REMINDERS */}
-        <Link
-          href="/reminders"
-          className={`tm-nav-link ${
-            isActive("/reminders") ? "tm-active" : ""
-          }`}
-        >
-          <span className="tm-nav-icon">
-            <svg viewBox="0 0 24 24" aria-hidden="true">
-              <circle cx="12" cy="12" r="8" />
-              <path d="M12 7v5l3 2" />
-            </svg>
-          </span>
-          <span>Reminders</span>
-        </Link>
+      <nav className="tm-nav" aria-label="Main navigation">
+        {items.map((item) => (
+          <Link
+            key={item.href}
+            href={item.href}
+            className={`tm-nav-item ${active(item.href) ? "is-active" : ""}`}
+            aria-current={active(item.href) ? "page" : undefined}
+            title={item.label}
+          >
+            <span className="tm-nav-icon">{item.icon}</span>
+            <span className="tm-nav-text">{item.label}</span>
+          </Link>
+        ))}
       </nav>
 
-      {/* ACCOUNT */}
-      <Link href="/profile" className="tm-account">
-        <div className="tm-avatar">M</div>
+      <div className="tm-sidebar-spacer" />
 
-        <div className="tm-account-info">
+      <Link
+        href="/profile"
+        className={`tm-profile ${active("/profile") ? "is-active" : ""}`}
+        title="Profile & settings"
+      >
+        <div className="tm-profile-avatar">M</div>
+        <div className="tm-profile-copy">
           <strong>My Account</strong>
-          <small>Profile &amp; settings</small>
+          <span>Profile & settings</span>
         </div>
+        <svg className="tm-chevron" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="m9 18 6-6-6-6" />
+        </svg>
       </Link>
+
+      <div className="tm-sidebar-foot">TRACEMIND · PRIVATE BY DESIGN</div>
 
       <style jsx global>{`
         .tm-sidebar {
           position: fixed;
-          top: 0;
-          left: 0;
-          bottom: 0;
-          width: 238px;
-          height: 100vh;
-          background: #fff;
-          border-right: 1px solid #e7e8eb;
+          inset: 0 auto 0 0;
+          width: 248px;
+          padding: 22px 14px 14px;
+          background:
+            radial-gradient(circle at 0 0, rgba(23, 25, 30, 0.035), transparent 34%),
+            #fff;
+          border-right: 1px solid #e8e9ec;
           display: flex;
           flex-direction: column;
-          padding: 28px 18px 20px;
-          z-index: 9999;
+          z-index: 1000;
           box-sizing: border-box;
         }
 
-        .tm-sidebar-logo {
-          width: 100%;
-          height: 34px;
+        .tm-brand {
+          height: 46px;
+          padding: 0 10px;
           display: flex;
           align-items: center;
           gap: 11px;
-          padding: 0 10px;
-          box-sizing: border-box;
-          color: #17191e;
-          font-size: 18px;
-          font-weight: 750;
-          letter-spacing: -0.4px;
         }
 
-        .tm-logo-mark {
-          width: 34px;
-          height: 34px;
-          min-width: 34px;
-          border-radius: 11px;
+        .tm-brand-mark {
+          width: 36px;
+          height: 36px;
           display: grid;
           place-items: center;
+          border-radius: 11px;
           background: #17191e;
           color: #fff;
           font-size: 15px;
+          font-weight: 850;
+          letter-spacing: -0.04em;
+          box-shadow: 0 7px 18px rgba(23, 25, 30, 0.14);
+        }
+
+        .tm-brand-name {
+          color: #17191e;
+          font-size: 18px;
+          font-weight: 780;
+          letter-spacing: -0.045em;
+        }
+
+        .tm-brand-name span {
+          font-weight: 500;
+          color: #777b83;
+        }
+
+        .tm-nav-label {
+          margin: 40px 12px 10px;
+          color: #a0a3aa;
+          font-size: 9px;
           font-weight: 800;
+          letter-spacing: 0.16em;
         }
 
-        .tm-workspace-label {
-          margin: 48px 12px 13px;
-          color: #a1a4aa;
-          font-size: 10px;
-          font-weight: 750;
-          letter-spacing: 1.5px;
-          line-height: 1;
+        .tm-nav {
+          display: grid;
+          gap: 4px;
         }
 
-        .tm-sidebar-nav {
-          width: 100%;
-          display: flex;
-          flex-direction: column;
-          gap: 5px;
+        .tm-nav-item {
           position: relative;
-          z-index: 2;
-        }
-
-        .tm-nav-link {
-          width: 100%;
-          height: 43px;
-          min-height: 43px;
+          height: 46px;
           display: flex;
           align-items: center;
-          gap: 13px;
-          padding: 0 13px;
-          border-radius: 11px;
-          box-sizing: border-box;
-          color: #777b83;
-          background: transparent;
+          gap: 12px;
+          padding: 0 12px;
+          border-radius: 12px;
+          color: #747880;
           text-decoration: none;
-          font-size: 14px;
-          font-weight: 600;
-          line-height: 1;
-          transition:
-            background 0.18s ease,
-            color 0.18s ease;
-          position: relative;
-          z-index: 3;
+          font-size: 13px;
+          font-weight: 650;
+          transition: color .18s ease, background .18s ease, transform .18s ease;
         }
 
-        .tm-nav-link:hover {
-          background: #f4f5f7;
+        .tm-nav-item:hover {
+          background: #f5f6f7;
           color: #17191e;
         }
 
-        .tm-nav-link.tm-active {
+        .tm-nav-item.is-active {
           background: #17191e;
           color: #fff;
+          box-shadow: 0 8px 20px rgba(23, 25, 30, 0.12);
+        }
+
+        .tm-nav-item.is-active::before {
+          content: "";
+          position: absolute;
+          left: -14px;
+          width: 3px;
+          height: 22px;
+          border-radius: 0 4px 4px 0;
+          background: #17191e;
         }
 
         .tm-nav-icon {
-          width: 20px;
-          min-width: 20px;
-          height: 20px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
+          width: 21px;
+          height: 21px;
+          flex: 0 0 21px;
+          display: grid;
+          place-items: center;
         }
 
         .tm-nav-icon svg {
-          width: 18px;
-          height: 18px;
+          width: 19px;
+          height: 19px;
           fill: none;
           stroke: currentColor;
+          stroke-width: 1.75;
+          stroke-linecap: round;
+          stroke-linejoin: round;
+        }
+
+        .tm-sidebar-spacer {
+          flex: 1;
+          min-height: 28px;
+        }
+
+        .tm-profile {
+          min-height: 60px;
+          padding: 10px;
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          border: 1px solid transparent;
+          border-radius: 13px;
+          color: #17191e;
+          text-decoration: none;
+          transition: background .18s ease, border-color .18s ease;
+        }
+
+        .tm-profile:hover,
+        .tm-profile.is-active {
+          background: #f6f7f8;
+          border-color: #e8e9ec;
+        }
+
+        .tm-profile-avatar {
+          width: 34px;
+          height: 34px;
+          flex: 0 0 34px;
+          display: grid;
+          place-items: center;
+          border-radius: 50%;
+          background: #eceef1;
+          color: #17191e;
+          font-size: 12px;
+          font-weight: 800;
+        }
+
+        .tm-profile-copy {
+          min-width: 0;
+          flex: 1;
+        }
+
+        .tm-profile-copy strong,
+        .tm-profile-copy span {
+          display: block;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+        }
+
+        .tm-profile-copy strong {
+          font-size: 11px;
+          font-weight: 750;
+        }
+
+        .tm-profile-copy span {
+          margin-top: 3px;
+          color: #9a9da4;
+          font-size: 9px;
+        }
+
+        .tm-chevron {
+          width: 15px;
+          height: 15px;
+          fill: none;
+          stroke: #a0a3aa;
           stroke-width: 1.8;
           stroke-linecap: round;
           stroke-linejoin: round;
         }
 
-        .tm-account {
-          width: 100%;
-          min-height: 56px;
-          margin-top: auto;
-          padding: 18px 11px 0;
-          border-top: 1px solid #ececef;
-          box-sizing: border-box;
-          display: flex;
-          align-items: center;
-          gap: 10px;
-          color: #17191e;
-          text-decoration: none;
-        }
-
-        .tm-avatar {
-          width: 35px;
-          height: 35px;
-          min-width: 35px;
-          border-radius: 50%;
-          background: #eceef1;
-          display: grid;
-          place-items: center;
-          color: #17191e;
-          font-size: 13px;
-          font-weight: 700;
-        }
-
-        .tm-account-info {
-          min-width: 0;
-          overflow: hidden;
-        }
-
-        .tm-account-info strong {
-          display: block;
-          font-size: 12px;
-          font-weight: 700;
-          line-height: 1.2;
-          white-space: nowrap;
-        }
-
-        .tm-account-info small {
-          display: block;
-          margin-top: 3px;
-          color: #999ca2;
-          font-size: 10px;
-          line-height: 1.2;
-          white-space: nowrap;
+        .tm-sidebar-foot {
+          padding: 10px 9px 2px;
+          color: #b0b3b9;
+          font-size: 7px;
+          font-weight: 750;
+          letter-spacing: .08em;
         }
 
         @media (max-width: 900px) {
           .tm-sidebar {
-            width: 76px;
-            padding: 28px 10px 20px;
+            width: 78px;
+            padding: 20px 9px 12px;
           }
 
-          .tm-sidebar-logo {
+          .tm-brand {
             justify-content: center;
             padding: 0;
           }
 
-          .tm-sidebar-logo > span {
+          .tm-brand-name,
+          .tm-nav-label,
+          .tm-nav-text,
+          .tm-profile-copy,
+          .tm-chevron,
+          .tm-sidebar-foot {
             display: none;
           }
 
-          .tm-workspace-label {
-            display: none;
+          .tm-nav {
+            margin-top: 34px;
+            gap: 7px;
           }
 
-          .tm-sidebar-nav {
-            margin-top: 42px;
-          }
-
-          .tm-nav-link {
-            width: 56px;
-            height: 46px;
-            min-height: 46px;
+          .tm-nav-item {
+            width: 58px;
+            height: 50px;
+            justify-content: center;
+            padding: 0;
             margin: 0 auto;
-            padding: 0;
-            justify-content: center;
-            gap: 0;
           }
 
-          .tm-nav-link > span:last-child {
-            display: none;
+          .tm-nav-item.is-active::before {
+            left: -9px;
           }
 
-          .tm-nav-icon {
-            width: auto;
-            min-width: 0;
-          }
-
+          .tm-nav-icon,
           .tm-nav-icon svg {
-            width: 19px;
-            height: 19px;
+            width: 20px;
+            height: 20px;
           }
 
-          .tm-account {
-            width: 56px;
-            margin-left: auto;
-            margin-right: auto;
-            padding: 18px 0 0;
+          .tm-profile {
+            width: 58px;
+            height: 58px;
+            min-height: 58px;
             justify-content: center;
+            padding: 0;
+            margin: 0 auto;
           }
 
-          .tm-account-info {
-            display: none;
+          .tm-profile-avatar {
+            width: 36px;
+            height: 36px;
           }
         }
 
-        @media (max-width: 650px) {
+        @media (max-width: 520px) {
           .tm-sidebar {
-            width: 68px;
-            padding-left: 7px;
-            padding-right: 7px;
+            width: 66px;
+            padding-left: 6px;
+            padding-right: 6px;
           }
 
-          .tm-nav-link {
-            width: 52px;
+          .tm-brand-mark {
+            width: 34px;
+            height: 34px;
           }
 
-          .tm-account {
-            width: 52px;
+          .tm-nav-item {
+            width: 50px;
+            height: 48px;
+          }
+
+          .tm-nav-item.is-active::before {
+            left: -6px;
+          }
+
+          .tm-profile {
+            width: 50px;
+            height: 52px;
           }
         }
       `}</style>
     </aside>
   );
 }
-

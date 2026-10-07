@@ -1,8 +1,8 @@
 "use client";
 
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { useEffect, useState } from "react";
-import Logo from "../../components/Logo";
+import { useRouter } from "next/navigation";
 import { createClient } from "../../lib/supabase";
 
 type Reminder = {
@@ -11,737 +11,1496 @@ type Reminder = {
   reminder_at: string;
   completed: boolean;
   memory_id: string | null;
+  created_at: string;
+  memories?: {
+    title: string;
+  } | null;
 };
 
+/* =========================
+   ICONS
+========================= */
+
+function DashboardIcon() {
+  return (
+    <svg viewBox="0 0 24 24">
+      <path d="M3 10.5L12 3l9 7.5" />
+      <path d="M5 9.5V21h14V9.5" />
+      <path d="M9 21v-6h6v6" />
+    </svg>
+  );
+}
+
+function CaptureIcon() {
+  return (
+    <svg viewBox="0 0 24 24">
+      <path d="M12 5v14" />
+      <path d="M5 12h14" />
+    </svg>
+  );
+}
+
+function MemoriesIcon() {
+  return (
+    <svg viewBox="0 0 24 24">
+      <rect x="4" y="4" width="16" height="16" rx="2" />
+      <path d="M8 8h8" />
+      <path d="M8 12h8" />
+      <path d="M8 16h5" />
+    </svg>
+  );
+}
+
+function TimelineIcon() {
+  return (
+    <svg viewBox="0 0 24 24">
+      <circle cx="12" cy="12" r="8" />
+      <path d="M12 7v5l3 2" />
+    </svg>
+  );
+}
+
+function ReminderIcon() {
+  return (
+    <svg viewBox="0 0 24 24">
+      <path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9" />
+      <path d="M10 21h4" />
+    </svg>
+  );
+}
+
+function ProfileIcon() {
+  return (
+    <svg viewBox="0 0 24 24">
+      <circle cx="12" cy="8" r="3.5" />
+      <path d="M5 21c.8-4 3.1-6 7-6s6.2 2 7 6" />
+    </svg>
+  );
+}
+
+function CheckIcon() {
+  return (
+    <svg viewBox="0 0 24 24">
+      <path d="m5 12 4 4L19 6" />
+    </svg>
+  );
+}
+
+function TrashIcon() {
+  return (
+    <svg viewBox="0 0 24 24">
+      <path d="M4 7h16" />
+      <path d="M10 11v6" />
+      <path d="M14 11v6" />
+      <path d="M6 7l1 14h10l1-14" />
+      <path d="M9 7V4h6v3" />
+    </svg>
+  );
+}
+
+/* =========================
+   HELPERS
+========================= */
+
+function formatDate(date: string) {
+  return new Date(date).toLocaleDateString("en-IN", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  });
+}
+
+function formatTime(date: string) {
+  return new Date(date).toLocaleTimeString("en-IN", {
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
+function isOverdue(reminder: Reminder) {
+  return (
+    !reminder.completed &&
+    new Date(reminder.reminder_at).getTime() <
+      Date.now()
+  );
+}
+
+/* =========================
+   PAGE
+========================= */
+
 export default function RemindersPage() {
+  const router = useRouter();
   const supabase = createClient();
 
   const [reminders, setReminders] = useState<Reminder[]>([]);
   const [loading, setLoading] = useState(true);
+  const [updating, setUpdating] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState<string | null>(null);
+  const [filter, setFilter] = useState<
+    "All" | "Upcoming" | "Overdue" | "Completed"
+  >("All");
 
   useEffect(() => {
     loadReminders();
   }, []);
 
   async function loadReminders() {
+    setLoading(true);
+
     const {
       data: { user },
     } = await supabase.auth.getUser();
 
     if (!user) {
-      setLoading(false);
+      router.push("/login");
       return;
     }
 
     const { data, error } = await supabase
       .from("reminders")
-      .select("id,title,reminder_at,completed,memory_id")
+      .select(
+        `
+          id,
+          title,
+          reminder_at,
+          completed,
+          memory_id,
+          created_at,
+          memories (
+            title
+          )
+        `
+      )
       .eq("user_id", user.id)
-      .order("reminder_at", { ascending: true });
+      .order("reminder_at", {
+        ascending: true,
+      });
 
-    if (!error) {
-      setReminders(data || []);
+    if (error) {
+      console.error(
+        "Error loading reminders:",
+        error
+      );
+
+      setReminders([]);
+    } else {
+      const normalizedReminders = (
+        data ?? []
+      ).map((item) => ({
+        ...item,
+        memories: Array.isArray(item.memories)
+          ? item.memories[0] ?? null
+          : item.memories ?? null,
+      })) as Reminder[];
+
+      setReminders(normalizedReminders);
     }
 
     setLoading(false);
   }
 
-  async function toggleReminder(
-    id: string,
-    completed: boolean
+  async function toggleCompleted(
+    reminder: Reminder
   ) {
+    if (updating === reminder.id) return;
+
+    setUpdating(reminder.id);
+
     const { error } = await supabase
       .from("reminders")
       .update({
-        completed: !completed,
+        completed: !reminder.completed,
       })
-      .eq("id", id);
+      .eq("id", reminder.id);
 
     if (!error) {
       setReminders((current) =>
-        current.map((reminder) =>
-          reminder.id === id
+        current.map((item) =>
+          item.id === reminder.id
             ? {
-                ...reminder,
-                completed: !completed,
+                ...item,
+                completed: !item.completed,
               }
-            : reminder
+            : item
         )
       );
     }
+
+    setUpdating(null);
   }
 
-  async function deleteReminder(id: string) {
+  async function deleteReminder(
+    reminder: Reminder
+  ) {
+    if (deleting === reminder.id) return;
+
     const confirmed = window.confirm(
       "Delete this reminder?"
     );
 
     if (!confirmed) return;
 
+    setDeleting(reminder.id);
+
     const { error } = await supabase
       .from("reminders")
       .delete()
-      .eq("id", id);
+      .eq("id", reminder.id);
 
     if (!error) {
       setReminders((current) =>
-        current.filter((reminder) => reminder.id !== id)
+        current.filter(
+          (item) => item.id !== reminder.id
+        )
       );
     }
+
+    setDeleting(null);
   }
 
-  function formatDate(date: string) {
-    return new Date(date).toLocaleDateString("en-IN", {
-      day: "numeric",
-      month: "short",
-      year: "numeric",
-    });
-  }
-
-  function formatTime(date: string) {
-    return new Date(date).toLocaleTimeString("en-IN", {
-      hour: "numeric",
-      minute: "2-digit",
-    });
-  }
-
-  function isPast(date: string) {
-    return new Date(date).getTime() < Date.now();
-  }
-
-  const upcoming = reminders.filter(
+  const upcomingCount = reminders.filter(
     (reminder) =>
       !reminder.completed &&
-      !isPast(reminder.reminder_at)
-  );
+      !isOverdue(reminder)
+  ).length;
 
-  const overdue = reminders.filter(
+  const overdueCount = reminders.filter(
     (reminder) =>
-      !reminder.completed &&
-      isPast(reminder.reminder_at)
-  );
+      isOverdue(reminder)
+  ).length;
 
-  const completed = reminders.filter(
-    (reminder) => reminder.completed
-  );
+  const completedCount = reminders.filter(
+    (reminder) =>
+      reminder.completed
+  ).length;
+
+  const filteredReminders = useMemo(() => {
+    if (filter === "Upcoming") {
+      return reminders.filter(
+        (reminder) =>
+          !reminder.completed &&
+          !isOverdue(reminder)
+      );
+    }
+
+    if (filter === "Overdue") {
+      return reminders.filter(
+        (reminder) =>
+          isOverdue(reminder)
+      );
+    }
+
+    if (filter === "Completed") {
+      return reminders.filter(
+        (reminder) =>
+          reminder.completed
+      );
+    }
+
+    return reminders;
+  }, [reminders, filter]);
 
   return (
-    <main className="page">
+    <div className="tm-page">
 
-      {/* SIDEBAR */}
+      {/* =========================
+          SIDEBAR
+      ========================= */}
 
-      <aside className="sidebar">
+      <aside className="tm-sidebar">
 
-        <Link href="/dashboard" className="logo">
-          <Logo />
-        </Link>
+        <div className="tm-brand">
+          <div className="tm-brand-mark">
+            T
+          </div>
 
-        <nav>
+          <span>TraceMind</span>
+        </div>
 
-          <Link href="/dashboard" className="nav">
-            <span>⌂</span>
-            <label>Dashboard</label>
+        <nav className="tm-navigation">
+
+          <Link
+            href="/dashboard"
+            className="tm-navigation-item"
+          >
+            <span className="tm-icon">
+              <DashboardIcon />
+            </span>
+
+            <span className="tm-label">
+              Dashboard
+            </span>
           </Link>
 
-          <Link href="/capture" className="nav">
-            <span>＋</span>
-            <label>Capture</label>
+          <Link
+            href="/capture"
+            className="tm-navigation-item"
+          >
+            <span className="tm-icon">
+              <CaptureIcon />
+            </span>
+
+            <span className="tm-label">
+              Capture
+            </span>
           </Link>
 
-          <Link href="/memories" className="nav">
-            <span>▣</span>
-            <label>Memories</label>
+          <Link
+            href="/memories"
+            className="tm-navigation-item"
+          >
+            <span className="tm-icon">
+              <MemoriesIcon />
+            </span>
+
+            <span className="tm-label">
+              Memories
+            </span>
           </Link>
 
-          <Link href="/timeline" className="nav">
-            <span>◇</span>
-            <label>Timeline</label>
+          <Link
+            href="/timeline"
+            className="tm-navigation-item"
+          >
+            <span className="tm-icon">
+              <TimelineIcon />
+            </span>
+
+            <span className="tm-label">
+              Timeline
+            </span>
           </Link>
 
           <Link
             href="/reminders"
-            className="nav active"
+            className="tm-navigation-item tm-navigation-active"
           >
-            <span>◷</span>
-            <label>Reminders</label>
+            <span className="tm-icon">
+              <ReminderIcon />
+            </span>
+
+            <span className="tm-label">
+              Reminders
+            </span>
           </Link>
 
         </nav>
 
-      </aside>
+        <div className="tm-profile-navigation">
 
-      {/* MAIN */}
+          <Link
+            href="/profile"
+            className="tm-navigation-item"
+          >
+            <span className="tm-icon">
+              <ProfileIcon />
+            </span>
 
-      <div className="main">
-
-        <header>
-
-          <div>
-            <p>PERSONAL MEMORY</p>
-            <h1>Reminders</h1>
-          </div>
-
-          <Link href="/capture" className="capture">
-            + Capture memory
+            <span className="tm-label">
+              Profile
+            </span>
           </Link>
 
-        </header>
+        </div>
 
-        {/* HERO */}
+      </aside>
 
-        <section className="hero">
+      {/* =========================
+          MAIN
+      ========================= */}
 
-          <div>
+      <main className="tm-main">
 
-            <p className="label">
-              DON'T FORGET WHAT MATTERS
-            </p>
+        <div className="tm-content">
 
-            <h2>
-              Your important
-              <br />
-              moments, on time.
-            </h2>
+          {/* HEADER */}
 
-            <p className="description">
-              TraceMind keeps track of reminders connected
-              to the information you've saved.
-            </p>
+          <header className="tm-header">
 
-          </div>
+            <div>
 
-          <div className="hero-number">
-            <strong>{upcoming.length}</strong>
-            <span>upcoming</span>
-          </div>
-
-        </section>
-
-        {/* STATS */}
-
-        <section className="stats">
-
-          <div className="stat">
-            <span>UPCOMING</span>
-            <strong>{upcoming.length}</strong>
-          </div>
-
-          <div className="stat">
-            <span>OVERDUE</span>
-            <strong>{overdue.length}</strong>
-          </div>
-
-          <div className="stat">
-            <span>COMPLETED</span>
-            <strong>{completed.length}</strong>
-          </div>
-
-        </section>
-
-        {/* REMINDERS */}
-
-        <section>
-
-          {loading ? (
-
-            <div className="empty">
-              Loading your reminders...
-            </div>
-
-          ) : reminders.length === 0 ? (
-
-            <div className="empty">
-
-              <div className="empty-icon">
-                ◷
-              </div>
-
-              <h3>No reminders yet</h3>
-
-              <p>
-                Your saved information can have reminders
-                attached to it.
+              <p className="tm-eyebrow">
+                YOUR INFORMATION
               </p>
 
-              <Link href="/capture">
-                Capture a memory →
-              </Link>
+              <h1>Reminders</h1>
+
+              <p className="tm-subtitle">
+                Keep track of information you
+                need to remember.
+              </p>
 
             </div>
 
-          ) : (
+            <Link
+              href="/capture"
+              className="tm-capture-button"
+            >
+              <span>+</span>
+              Capture
+            </Link>
 
-            <>
+          </header>
 
-              {/* OVERDUE */}
+          {/* FILTERS */}
 
-              {overdue.length > 0 && (
-                <ReminderGroup
-                  title="Needs attention"
-                  subtitle="These reminders have passed."
-                  reminders={overdue}
-                  toggleReminder={toggleReminder}
-                  deleteReminder={deleteReminder}
-                  formatDate={formatDate}
-                  formatTime={formatTime}
-                  overdue
-                />
-              )}
+          <div className="tm-filters">
 
-              {/* UPCOMING */}
+            <button
+              type="button"
+              className={
+                filter === "All"
+                  ? "tm-filter tm-filter-active"
+                  : "tm-filter"
+              }
+              onClick={() =>
+                setFilter("All")
+              }
+            >
+              All
+            </button>
 
-              {upcoming.length > 0 && (
-                <ReminderGroup
-                  title="Upcoming"
-                  subtitle="Things you asked TraceMind to remember."
-                  reminders={upcoming}
-                  toggleReminder={toggleReminder}
-                  deleteReminder={deleteReminder}
-                  formatDate={formatDate}
-                  formatTime={formatTime}
-                />
-              )}
+            <button
+              type="button"
+              className={
+                filter === "Upcoming"
+                  ? "tm-filter tm-filter-active"
+                  : "tm-filter"
+              }
+              onClick={() =>
+                setFilter("Upcoming")
+              }
+            >
+              Upcoming
+            </button>
 
-              {/* COMPLETED */}
+            <button
+              type="button"
+              className={
+                filter === "Overdue"
+                  ? "tm-filter tm-filter-active"
+                  : "tm-filter"
+              }
+              onClick={() =>
+                setFilter("Overdue")
+              }
+            >
+              Overdue
+            </button>
 
-              {completed.length > 0 && (
-                <ReminderGroup
-                  title="Completed"
-                  subtitle="Reminders you've already handled."
-                  reminders={completed}
-                  toggleReminder={toggleReminder}
-                  deleteReminder={deleteReminder}
-                  formatDate={formatDate}
-                  formatTime={formatTime}
-                />
-              )}
+            <button
+              type="button"
+              className={
+                filter === "Completed"
+                  ? "tm-filter tm-filter-active"
+                  : "tm-filter"
+              }
+              onClick={() =>
+                setFilter("Completed")
+              }
+            >
+              Completed
+            </button>
 
-            </>
+          </div>
 
+          {/* SUMMARY */}
+
+          <div className="tm-summary">
+
+            <span>
+              <strong>
+                {filteredReminders.length}
+              </strong>{" "}
+              {filteredReminders.length === 1
+                ? "reminder"
+                : "reminders"}
+            </span>
+
+            <span>
+              {upcomingCount} upcoming
+            </span>
+
+          </div>
+
+          {/* LOADING */}
+
+          {loading && (
+            <div className="tm-loading">
+
+              <div className="tm-spinner" />
+
+              <p>
+                Loading your reminders...
+              </p>
+
+            </div>
           )}
 
-        </section>
+          {/* EMPTY */}
 
-      </div>
+          {!loading &&
+            filteredReminders.length === 0 && (
+              <div className="tm-empty">
+
+                <div className="tm-empty-icon">
+                  <ReminderIcon />
+                </div>
+
+                <h2>
+                  {filter === "All"
+                    ? "No reminders yet"
+                    : `No ${filter.toLowerCase()} reminders`}
+                </h2>
+
+                <p>
+                  {filter === "All"
+                    ? "Reminders connected to your saved information will appear here."
+                    : "There are no reminders in this category right now."}
+                </p>
+
+                {filter === "All" && (
+                  <Link
+                    href="/capture"
+                    className="tm-empty-button"
+                  >
+                    Capture something
+                  </Link>
+                )}
+
+              </div>
+            )}
+
+          {/* REMINDER CARDS */}
+
+          {!loading &&
+            filteredReminders.length > 0 && (
+              <div className="tm-reminder-list">
+
+                {filteredReminders.map(
+                  (reminder) => {
+
+                    const overdue =
+                      isOverdue(reminder);
+
+                    return (
+                      <div
+                        key={reminder.id}
+                        className={
+                          reminder.completed
+                            ? "tm-reminder-card tm-reminder-completed"
+                            : "tm-reminder-card"
+                        }
+                      >
+
+                        {/* LEFT */}
+
+                        <div className="tm-reminder-main">
+
+                          <button
+                            type="button"
+                            className={
+                              reminder.completed
+                                ? "tm-check tm-check-active"
+                                : "tm-check"
+                            }
+                            onClick={() =>
+                              toggleCompleted(
+                                reminder
+                              )
+                            }
+                            disabled={
+                              updating ===
+                              reminder.id
+                            }
+                            aria-label={
+                              reminder.completed
+                                ? "Mark incomplete"
+                                : "Mark complete"
+                            }
+                          >
+                            <CheckIcon />
+                          </button>
+
+                          <div className="tm-reminder-content">
+
+                            <h2>
+                              {reminder.title}
+                            </h2>
+
+                            {reminder.memories?.title && (
+                              <Link
+                                href={`/memories/${reminder.memory_id}`}
+                                className="tm-memory-link"
+                              >
+                                From memory:{" "}
+                                {
+                                  reminder
+                                    .memories
+                                    .title
+                                }
+                              </Link>
+                            )}
+
+                            <div className="tm-reminder-meta">
+
+                              <span
+                                className={
+                                  overdue
+                                    ? "tm-date tm-date-overdue"
+                                    : "tm-date"
+                                }
+                              >
+                                {formatDate(
+                                  reminder.reminder_at
+                                )}
+                              </span>
+
+                              <span className="tm-time">
+                                {formatTime(
+                                  reminder.reminder_at
+                                )}
+                              </span>
+
+                              {overdue &&
+                                !reminder.completed && (
+                                  <span className="tm-overdue">
+                                    OVERDUE
+                                  </span>
+                                )}
+
+                              {reminder.completed && (
+                                <span className="tm-completed">
+                                  COMPLETED
+                                </span>
+                              )}
+
+                            </div>
+
+                          </div>
+
+                        </div>
+
+                        {/* DELETE */}
+
+                        <button
+                          type="button"
+                          className="tm-delete"
+                          onClick={() =>
+                            deleteReminder(
+                              reminder
+                            )
+                          }
+                          disabled={
+                            deleting ===
+                            reminder.id
+                          }
+                          aria-label="Delete reminder"
+                        >
+                          <TrashIcon />
+                        </button>
+
+                      </div>
+                    );
+                  }
+                )}
+
+              </div>
+            )}
+
+          {/* STATS */}
+
+          {!loading &&
+            reminders.length > 0 && (
+              <div className="tm-stats">
+
+                <div className="tm-stat">
+
+                  <span className="tm-stat-label">
+                    UPCOMING
+                  </span>
+
+                  <strong>
+                    {upcomingCount}
+                  </strong>
+
+                </div>
+
+                <div className="tm-stat">
+
+                  <span className="tm-stat-label">
+                    OVERDUE
+                  </span>
+
+                  <strong>
+                    {overdueCount}
+                  </strong>
+
+                </div>
+
+                <div className="tm-stat">
+
+                  <span className="tm-stat-label">
+                    COMPLETED
+                  </span>
+
+                  <strong>
+                    {completedCount}
+                  </strong>
+
+                </div>
+
+              </div>
+            )}
+
+        </div>
+
+      </main>
+
+      {/* =========================
+          STYLES
+      ========================= */}
 
       <style jsx>{`
 
-        * {
+        /* =================================
+           PAGE
+        ================================= */
+
+        .tm-page {
+          min-height: 100vh;
+          background: #fafafa;
+          color: #171717;
+        }
+
+        /* =================================
+           SIDEBAR
+        ================================= */
+
+        .tm-sidebar {
+          position: fixed;
+          top: 0;
+          left: 0;
+          bottom: 0;
+
+          width: 210px;
+
+          padding: 26px 14px;
+
+          background: #ffffff;
+
+          border-right: 1px solid #e7e7e7;
+
+          display: flex;
+          flex-direction: column;
+
+          z-index: 9999;
+
           box-sizing: border-box;
         }
 
-        .page {
-          min-height: 100vh;
-          background: #f7f8fb;
-          color: #101828;
-
-          font-family:
-            Inter,
-            system-ui,
-            -apple-system,
-            BlinkMacSystemFont,
-            "Segoe UI",
-            sans-serif;
-        }
-
-        /* SIDEBAR */
-
-        .sidebar {
-          position: fixed;
-          left: 0;
-          top: 0;
-
-          width: 125px;
-          height: 100vh;
-
-          background: white;
-          border-right: 1px solid #eaecf0;
-
+        .tm-brand {
           display: flex;
-          flex-direction: column;
           align-items: center;
 
-          padding: 25px 12px;
+          gap: 10px;
 
-          z-index: 20;
+          padding: 0 10px;
+
+          margin-bottom: 34px;
+
+          color: #171717;
+
+          font-size: 18px;
+          font-weight: 700;
+
+          white-space: nowrap;
         }
 
-        .logo {
-          display: block;
-          margin-bottom: 80px;
-        }
+        .tm-brand-mark {
+          width: 34px;
+          height: 34px;
 
-        nav {
+          flex: 0 0 34px;
+
           display: flex;
-          flex-direction: column;
-          gap: 12px;
-        }
-
-        .nav {
-          width: 70px;
-          min-height: 58px;
-
-          display: flex;
-          flex-direction: column;
           align-items: center;
           justify-content: center;
 
-          gap: 4px;
+          border-radius: 9px;
 
-          color: #98a2b3;
-          text-decoration: none;
+          background: #171717;
+          color: #ffffff;
 
-          border-radius: 16px;
-
-          transition: .2s;
-        }
-
-        .nav span {
-          font-size: 22px;
-        }
-
-        .nav label {
-          font-size: 8px;
+          font-size: 16px;
           font-weight: 700;
         }
 
-        .nav:hover {
-          background: #f2f4f7;
-          color: #101828;
-        }
-
-        .nav.active {
-          background: #17191f;
-          color: white;
-        }
-
-        /* MAIN */
-
-        .main {
-          margin-left: 125px;
-          width: calc(100% - 125px);
-
-          max-width: 1200px;
-
-          padding: 70px 6% 100px;
-        }
-
-        header {
-          display: flex;
-          align-items: flex-end;
-          justify-content: space-between;
-
-          margin-bottom: 35px;
-        }
-
-        header p {
-          margin: 0 0 8px;
-
-          color: #98a2b3;
-
-          font-size: 11px;
-          font-weight: 800;
-
-          letter-spacing: .14em;
-        }
-
-        header h1 {
-          margin: 0;
-
-          font-size: 48px;
-          letter-spacing: -.05em;
-        }
-
-        .capture {
-          background: #17191f;
-          color: white;
-
-          text-decoration: none;
-
-          padding: 16px 20px;
-
-          border-radius: 13px;
-
-          font-size: 13px;
-          font-weight: 800;
-        }
-
-        /* HERO */
-
-        .hero {
-          background: #17191f;
-          color: white;
-
-          border-radius: 28px;
-
-          padding: 48px 52px;
-
-          margin-bottom: 12px;
-
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-
-          gap: 30px;
-        }
-
-        .label {
-          margin: 0;
-
-          color: #98a2b3;
-
-          font-size: 11px;
-          font-weight: 800;
-
-          letter-spacing: .15em;
-        }
-
-        .hero h2 {
-          margin: 17px 0 20px;
-
-          font-size: clamp(36px, 5vw, 58px);
-
-          line-height: .98;
-
-          letter-spacing: -.055em;
-        }
-
-        .description {
-          max-width: 550px;
-
-          margin: 0;
-
-          color: #aeb3bd;
-
-          font-size: 13px;
-
-          line-height: 1.7;
-        }
-
-        .hero-number {
-          min-width: 150px;
+        .tm-navigation {
+          width: 100%;
 
           display: flex;
           flex-direction: column;
 
-          align-items: center;
-          justify-content: center;
-
-          padding: 25px;
-
-          border: 1px solid rgba(255,255,255,.12);
-
-          border-radius: 20px;
+          gap: 5px;
         }
 
-        .hero-number strong {
-          font-size: 55px;
+        .tm-navigation-item {
+          width: 100%;
+          height: 45px;
+
+          box-sizing: border-box;
+
+          padding: 0 12px;
+
+          display: flex;
+          align-items: center;
+
+          gap: 12px;
+
+          border-radius: 9px;
+
+          background: transparent;
+
+          color: #666666;
+
+          text-decoration: none;
+
+          font-size: 14px;
+          font-weight: 500;
 
           line-height: 1;
 
-          letter-spacing: -.06em;
+          white-space: nowrap;
+
+          transition:
+            background 0.15s ease,
+            color 0.15s ease;
         }
 
-        .hero-number span {
-          margin-top: 8px;
-
-          color: #98a2b3;
-
-          font-size: 10px;
-
-          text-transform: uppercase;
-
-          letter-spacing: .12em;
+        .tm-navigation-item:hover {
+          background: #f5f5f5;
+          color: #171717;
         }
 
-        /* STATS */
+        .tm-navigation-active {
+          background: #eeeeee;
+          color: #171717;
+          font-weight: 650;
+        }
 
-        .stats {
+        .tm-icon {
+          width: 20px;
+          height: 20px;
+
+          min-width: 20px;
+          min-height: 20px;
+
+          max-width: 20px;
+          max-height: 20px;
+
+          flex: 0 0 20px;
+
+          display: flex;
+          align-items: center;
+          justify-content: center;
+
+          overflow: hidden;
+        }
+
+        .tm-icon svg {
+          width: 20px !important;
+          height: 20px !important;
+
+          min-width: 20px !important;
+          min-height: 20px !important;
+
+          max-width: 20px !important;
+          max-height: 20px !important;
+
+          display: block !important;
+
+          fill: none !important;
+
+          stroke: currentColor !important;
+
+          stroke-width: 1.8 !important;
+        }
+
+        .tm-label {
+          display: block;
+
+          font-size: 14px;
+
+          line-height: 1;
+
+          white-space: nowrap;
+        }
+
+        .tm-profile-navigation {
+          width: 100%;
+
+          margin-top: auto;
+
+          padding-top: 16px;
+
+          border-top: 1px solid #eeeeee;
+        }
+
+        /* =================================
+           MAIN
+        ================================= */
+
+        .tm-main {
+          min-height: 100vh;
+
+          margin-left: 210px;
+        }
+
+        .tm-content {
+          width: min(
+            1180px,
+            calc(100% - 64px)
+          );
+
+          margin: 0 auto;
+
+          padding: 52px 0 70px;
+        }
+
+        /* =================================
+           HEADER
+        ================================= */
+
+        .tm-header {
+          display: flex;
+
+          align-items: flex-end;
+
+          justify-content: space-between;
+
+          gap: 30px;
+
+          margin-bottom: 30px;
+        }
+
+        .tm-eyebrow {
+          margin: 0 0 8px;
+
+          color: #8a8a8a;
+
+          font-size: 11px;
+          font-weight: 700;
+
+          letter-spacing: 0.14em;
+        }
+
+        .tm-header h1 {
+          margin: 0;
+
+          color: #171717;
+
+          font-size: 36px;
+
+          line-height: 1.1;
+
+          letter-spacing: -0.035em;
+
+          font-weight: 700;
+        }
+
+        .tm-subtitle {
+          margin: 10px 0 0;
+
+          color: #777777;
+
+          font-size: 15px;
+        }
+
+        .tm-capture-button {
+          height: 44px;
+
+          padding: 0 18px;
+
+          display: inline-flex;
+
+          align-items: center;
+          justify-content: center;
+
+          gap: 9px;
+
+          border-radius: 9px;
+
+          background: #171717;
+
+          color: #ffffff;
+
+          text-decoration: none;
+
+          font-size: 14px;
+          font-weight: 600;
+        }
+
+        .tm-capture-button:hover {
+          background: #303030;
+        }
+
+        .tm-capture-button span {
+          font-size: 20px;
+          line-height: 1;
+        }
+
+        /* =================================
+           FILTERS
+        ================================= */
+
+        .tm-filters {
+          display: flex;
+
+          flex-wrap: wrap;
+
+          gap: 8px;
+
+          margin-bottom: 22px;
+        }
+
+        .tm-filter {
+          height: 34px;
+
+          padding: 0 13px;
+
+          border: 1px solid #e2e2e2;
+
+          border-radius: 7px;
+
+          background: #ffffff;
+
+          color: #707070;
+
+          font-size: 12px;
+
+          font-weight: 600;
+
+          cursor: pointer;
+        }
+
+        .tm-filter:hover {
+          border-color: #cccccc;
+        }
+
+        .tm-filter-active {
+          background: #171717;
+
+          border-color: #171717;
+
+          color: #ffffff;
+        }
+
+        /* =================================
+           SUMMARY
+        ================================= */
+
+        .tm-summary {
+          display: flex;
+
+          align-items: center;
+
+          justify-content: space-between;
+
+          padding: 0 2px 14px;
+
+          color: #777777;
+
+          font-size: 13px;
+        }
+
+        .tm-summary strong {
+          color: #171717;
+
+          font-weight: 700;
+        }
+
+        /* =================================
+           REMINDER LIST
+        ================================= */
+
+        .tm-reminder-list {
+          display: flex;
+
+          flex-direction: column;
+
+          gap: 12px;
+        }
+
+        .tm-reminder-card {
+          min-height: 92px;
+
+          padding: 17px 18px;
+
+          display: flex;
+
+          align-items: center;
+
+          justify-content: space-between;
+
+          gap: 18px;
+
+          background: #ffffff;
+
+          border: 1px solid #e5e5e5;
+
+          border-radius: 13px;
+
+          box-sizing: border-box;
+
+          transition:
+            border-color 0.18s ease,
+            box-shadow 0.18s ease;
+        }
+
+        .tm-reminder-card:hover {
+          border-color: #d4d4d4;
+
+          box-shadow:
+            0 8px 24px
+            rgba(0, 0, 0, 0.04);
+        }
+
+        .tm-reminder-main {
+          min-width: 0;
+
+          display: flex;
+
+          align-items: flex-start;
+
+          gap: 14px;
+        }
+
+        /* =================================
+           CHECK
+        ================================= */
+
+        .tm-check {
+          width: 24px;
+          height: 24px;
+
+          margin-top: 1px;
+
+          padding: 0;
+
+          flex: 0 0 24px;
+
+          display: flex;
+
+          align-items: center;
+          justify-content: center;
+
+          border: 1.5px solid #cfcfcf;
+
+          border-radius: 7px;
+
+          background: #ffffff;
+
+          color: #ffffff;
+
+          cursor: pointer;
+        }
+
+        .tm-check:hover {
+          border-color: #777777;
+        }
+
+        .tm-check svg {
+          width: 15px;
+          height: 15px;
+
+          fill: none;
+
+          stroke: currentColor;
+
+          stroke-width: 2;
+        }
+
+        .tm-check-active {
+          border-color: #171717;
+
+          background: #171717;
+
+          color: #ffffff;
+        }
+
+        /* =================================
+           CONTENT
+        ================================= */
+
+        .tm-reminder-content {
+          min-width: 0;
+
+          display: flex;
+
+          flex-direction: column;
+
+          gap: 7px;
+        }
+
+        .tm-reminder-content h2 {
+          margin: 0;
+
+          color: #171717;
+
+          font-size: 16px;
+
+          line-height: 1.4;
+
+          font-weight: 700;
+
+          overflow-wrap: anywhere;
+        }
+
+        .tm-memory-link {
+          width: fit-content;
+
+          max-width: 100%;
+
+          color: #777777;
+
+          text-decoration: none;
+
+          font-size: 12px;
+
+          white-space: nowrap;
+
+          overflow: hidden;
+
+          text-overflow: ellipsis;
+        }
+
+        .tm-memory-link:hover {
+          color: #171717;
+
+          text-decoration: underline;
+        }
+
+        .tm-reminder-meta {
+          display: flex;
+
+          align-items: center;
+
+          flex-wrap: wrap;
+
+          gap: 9px;
+
+          font-size: 12px;
+        }
+
+        .tm-date {
+          color: #5f5f5f;
+
+          font-weight: 600;
+        }
+
+        .tm-date-overdue {
+          color: #171717;
+
+          font-weight: 700;
+        }
+
+        .tm-time {
+          color: #999999;
+
+          font-size: 11px;
+        }
+
+        .tm-overdue {
+          padding: 4px 7px;
+
+          border-radius: 5px;
+
+          background: #f1f1f1;
+
+          color: #555555;
+
+          font-size: 9px;
+
+          font-weight: 700;
+
+          letter-spacing: 0.06em;
+        }
+
+        .tm-completed {
+          padding: 4px 7px;
+
+          border-radius: 5px;
+
+          background: #f3f3f3;
+
+          color: #777777;
+
+          font-size: 9px;
+
+          font-weight: 700;
+
+          letter-spacing: 0.06em;
+        }
+
+        .tm-reminder-completed {
+          opacity: 0.65;
+        }
+
+        .tm-reminder-completed
+          .tm-reminder-content h2 {
+          text-decoration: line-through;
+
+          color: #777777;
+        }
+
+        /* =================================
+           DELETE
+        ================================= */
+
+        .tm-delete {
+          width: 34px;
+          height: 34px;
+
+          padding: 0;
+
+          flex: 0 0 34px;
+
+          display: flex;
+
+          align-items: center;
+          justify-content: center;
+
+          border: none;
+
+          border-radius: 7px;
+
+          background: transparent;
+
+          color: #a0a0a0;
+
+          cursor: pointer;
+        }
+
+        .tm-delete:hover {
+          background: #f5f5f5;
+
+          color: #333333;
+        }
+
+        .tm-delete svg {
+          width: 18px;
+          height: 18px;
+
+          fill: none;
+
+          stroke: currentColor;
+
+          stroke-width: 1.7;
+        }
+
+        /* =================================
+           STATS
+        ================================= */
+
+        .tm-stats {
+          margin-top: 22px;
+
           display: grid;
 
           grid-template-columns:
             repeat(3, 1fr);
 
-          gap: 10px;
-
-          margin-bottom: 45px;
+          gap: 12px;
         }
 
-        .stat {
-          background: white;
+        .tm-stat {
+          min-height: 76px;
 
-          border: 1px solid #eaecf0;
+          padding: 14px 16px;
 
-          border-radius: 16px;
-
-          padding: 22px;
-        }
-
-        .stat span {
-          display: block;
-
-          margin-bottom: 10px;
-
-          color: #98a2b3;
-
-          font-size: 9px;
-
-          font-weight: 800;
-
-          letter-spacing: .13em;
-        }
-
-        .stat strong {
-          font-size: 30px;
-
-          letter-spacing: -.04em;
-        }
-
-        /* GROUP */
-
-        .group {
-          margin-bottom: 40px;
-        }
-
-        .group-heading {
-          margin-bottom: 15px;
-        }
-
-        .group-heading h2 {
-          margin: 0 0 5px;
-
-          font-size: 21px;
-
-          letter-spacing: -.03em;
-        }
-
-        .group-heading p {
-          margin: 0;
-
-          color: #98a2b3;
-
-          font-size: 11px;
-        }
-
-        /* REMINDER */
-
-        .reminder-list {
           display: flex;
 
           flex-direction: column;
 
-          gap: 10px;
+          justify-content: center;
+
+          gap: 5px;
+
+          background: #ffffff;
+
+          border: 1px solid #e5e5e5;
+
+          border-radius: 11px;
         }
 
-        .reminder {
-          background: white;
+        .tm-stat-label {
+          color: #999999;
 
-          border: 1px solid #eaecf0;
+          font-size: 9px;
 
-          border-radius: 17px;
+          font-weight: 700;
 
-          padding: 18px;
+          letter-spacing: 0.08em;
+        }
+
+        .tm-stat strong {
+          color: #171717;
+
+          font-size: 19px;
+
+          font-weight: 700;
+        }
+
+        /* =================================
+           LOADING
+        ================================= */
+
+        .tm-loading {
+          min-height: 300px;
 
           display: flex;
 
+          flex-direction: column;
+
           align-items: center;
 
-          gap: 15px;
+          justify-content: center;
+
+          gap: 13px;
+
+          color: #888888;
         }
 
-        .reminder.done {
-          opacity: .6;
-        }
+        .tm-spinner {
+          width: 25px;
+          height: 25px;
 
-        .check {
-          width: 38px;
-          height: 38px;
+          border: 2px solid #e5e5e5;
 
-          flex-shrink: 0;
-
-          border: 1px solid #d0d5dd;
+          border-top-color: #333333;
 
           border-radius: 50%;
 
-          background: white;
-
-          cursor: pointer;
-
-          display: grid;
-          place-items: center;
-
-          font-size: 15px;
+          animation:
+            tm-spin 0.8s linear infinite;
         }
 
-        .check.checked {
-          background: #17191f;
-          color: white;
-          border-color: #17191f;
+        @keyframes tm-spin {
+          to {
+            transform: rotate(360deg);
+          }
         }
 
-        .reminder-info {
-          flex: 1;
+        /* =================================
+           EMPTY
+        ================================= */
 
-          min-width: 0;
-        }
+        .tm-empty {
+          min-height: 330px;
 
-        .reminder-info h3 {
-          margin: 0 0 6px;
-
-          font-size: 14px;
-        }
-
-        .reminder-info p {
-          margin: 0;
-
-          color: #667085;
-
-          font-size: 10px;
-        }
-
-        .overdue {
-          color: #b42318 !important;
-          font-weight: 800;
-        }
-
-        .open-memory {
-          color: #667085;
-
-          font-size: 10px;
-
-          text-decoration: none;
-
-          white-space: nowrap;
-        }
-
-        .delete {
-          border: 0;
-
-          background: transparent;
-
-          color: #98a2b3;
-
-          font-size: 18px;
-
-          cursor: pointer;
-
-          padding: 5px;
-        }
-
-        .delete:hover {
-          color: #101828;
-        }
-
-        /* EMPTY */
-
-        .empty {
-          min-height: 260px;
-
-          background: white;
-
-          border: 1px solid #eaecf0;
-
-          border-radius: 18px;
+          padding: 40px 20px;
 
           display: flex;
 
@@ -753,226 +1512,252 @@ export default function RemindersPage() {
 
           text-align: center;
 
-          padding: 30px;
+          background: #ffffff;
 
-          color: #98a2b3;
+          border: 1px solid #e5e5e5;
+
+          border-radius: 13px;
         }
 
-        .empty-icon {
-          width: 55px;
-          height: 55px;
+        .tm-empty-icon {
+          width: 52px;
+          height: 52px;
 
-          display: grid;
-          place-items: center;
+          margin-bottom: 18px;
 
-          border: 1px dashed #d0d5dd;
+          display: flex;
 
-          border-radius: 50%;
+          align-items: center;
 
-          margin-bottom: 15px;
+          justify-content: center;
 
-          font-size: 20px;
+          border-radius: 12px;
+
+          background: #f3f3f3;
+
+          color: #666666;
         }
 
-        .empty h3 {
-          margin: 0 0 7px;
+        .tm-empty-icon svg {
+          width: 24px;
+          height: 24px;
 
-          color: #101828;
+          fill: none;
 
-          font-size: 17px;
+          stroke: currentColor;
+
+          stroke-width: 1.8;
         }
 
-        .empty p {
-          margin: 0 0 16px;
+        .tm-empty h2 {
+          margin: 0;
 
-          font-size: 12px;
+          font-size: 19px;
+
+          font-weight: 700;
         }
 
-        .empty a {
-          color: #101828;
+        .tm-empty p {
+          max-width: 390px;
 
-          font-size: 12px;
+          margin: 9px 0 20px;
 
-          font-weight: 800;
+          color: #858585;
+
+          font-size: 13px;
+
+          line-height: 1.6;
+        }
+
+        .tm-empty-button {
+          height: 40px;
+
+          padding: 0 16px;
+
+          display: inline-flex;
+
+          align-items: center;
+
+          border-radius: 8px;
+
+          background: #171717;
+
+          color: #ffffff;
 
           text-decoration: none;
+
+          font-size: 13px;
+
+          font-weight: 600;
         }
 
-        /* MOBILE */
+        /* =================================
+           TABLET
+        ================================= */
 
-        @media (max-width: 700px) {
+        @media (max-width: 850px) {
 
-          .sidebar {
-            width: 82px;
-            padding: 20px 8px;
+          .tm-sidebar {
+            width: 190px;
           }
 
-          .main {
-            margin-left: 82px;
-            width: calc(100% - 82px);
-
-            padding: 45px 5%;
+          .tm-main {
+            margin-left: 190px;
           }
 
-          .logo {
-            margin-bottom: 55px;
+          .tm-content {
+            width: calc(100% - 40px);
           }
 
-          .nav {
-            width: 60px;
-          }
-
-          header {
-            flex-direction: column;
-            align-items: flex-start;
-            gap: 18px;
-          }
-
-          header h1 {
-            font-size: 40px;
-          }
-
-          .capture {
-            width: 100%;
-            text-align: center;
-          }
-
-          .hero {
-            padding: 35px 25px;
-
-            flex-direction: column;
-
-            align-items: flex-start;
-          }
-
-          .hero h2 {
-            font-size: 38px;
-          }
-
-          .hero-number {
-            width: 100%;
-          }
-
-          .stats {
+          .tm-stats {
             grid-template-columns: 1fr;
           }
 
-          .reminder {
+        }
+
+        /* =================================
+           MOBILE
+        ================================= */
+
+        @media (max-width: 650px) {
+
+          .tm-sidebar {
+            top: auto;
+            bottom: 0;
+            left: 0;
+
+            width: 100%;
+            height: 64px;
+
+            padding: 6px 8px;
+
+            border-right: none;
+
+            border-top: 1px solid #e5e5e5;
+
+            flex-direction: row;
+          }
+
+          .tm-brand {
+            display: none;
+          }
+
+          .tm-navigation {
+            width: 100%;
+
+            display: grid;
+
+            grid-template-columns:
+              repeat(5, 1fr);
+
+            gap: 3px;
+          }
+
+          .tm-navigation-item {
+            width: 100%;
+            height: 50px;
+
+            padding: 4px 2px;
+
+            flex-direction: column;
+
+            align-items: center;
+
+            justify-content: center;
+
+            gap: 4px;
+          }
+
+          .tm-icon {
+            width: 18px;
+            height: 18px;
+
+            min-width: 18px;
+            min-height: 18px;
+
+            max-width: 18px;
+            max-height: 18px;
+
+            flex: 0 0 18px;
+          }
+
+          .tm-icon svg {
+            width: 18px !important;
+            height: 18px !important;
+
+            min-width: 18px !important;
+            min-height: 18px !important;
+
+            max-width: 18px !important;
+            max-height: 18px !important;
+          }
+
+          .tm-label {
+            font-size: 9px;
+          }
+
+          .tm-profile-navigation {
+            display: none;
+          }
+
+          .tm-main {
+            margin-left: 0;
+
+            padding-bottom: 70px;
+          }
+
+          .tm-content {
+            width: calc(100% - 28px);
+
+            padding: 30px 0 40px;
+          }
+
+          .tm-header {
+            flex-direction: column;
+
+            align-items: flex-start;
+
+            gap: 18px;
+
+            margin-bottom: 24px;
+          }
+
+          .tm-header h1 {
+            font-size: 30px;
+          }
+
+          .tm-capture-button {
+            width: 100%;
+          }
+
+          .tm-reminder-card {
+            padding: 15px;
+
             align-items: flex-start;
           }
 
-          .open-memory {
-            display: none;
+          .tm-reminder-main {
+            gap: 10px;
+          }
+
+          .tm-reminder-content h2 {
+            font-size: 15px;
+          }
+
+          .tm-delete {
+            width: 32px;
+            height: 32px;
+
+            flex-basis: 32px;
+          }
+
+          .tm-stats {
+            grid-template-columns: 1fr;
           }
 
         }
 
       `}</style>
-
-    </main>
-  );
-}
-
-/* REMINDER GROUP */
-
-function ReminderGroup({
-  title,
-  subtitle,
-  reminders,
-  toggleReminder,
-  deleteReminder,
-  formatDate,
-  formatTime,
-  overdue = false,
-}: {
-  title: string;
-  subtitle: string;
-  reminders: Reminder[];
-  toggleReminder: (
-    id: string,
-    completed: boolean
-  ) => void;
-  deleteReminder: (id: string) => void;
-  formatDate: (date: string) => string;
-  formatTime: (date: string) => string;
-  overdue?: boolean;
-}) {
-  return (
-    <div className="group">
-
-      <div className="group-heading">
-
-        <h2>{title}</h2>
-
-        <p>{subtitle}</p>
-
-      </div>
-
-      <div className="reminder-list">
-
-        {reminders.map((reminder) => (
-
-          <div
-            className={`reminder ${
-              reminder.completed ? "done" : ""
-            }`}
-            key={reminder.id}
-          >
-
-            <button
-              className={`check ${
-                reminder.completed ? "checked" : ""
-              }`}
-              onClick={() =>
-                toggleReminder(
-                  reminder.id,
-                  reminder.completed
-                )
-              }
-              aria-label="Complete reminder"
-            >
-              {reminder.completed ? "✓" : ""}
-            </button>
-
-            <div className="reminder-info">
-
-              <h3>{reminder.title}</h3>
-
-              <p className={overdue ? "overdue" : ""}>
-                {overdue
-                  ? "Overdue · "
-                  : ""}
-                {formatDate(reminder.reminder_at)}
-                {" · "}
-                {formatTime(reminder.reminder_at)}
-              </p>
-
-            </div>
-
-            {reminder.memory_id && (
-              <Link
-                href={`/memories/${reminder.memory_id}`}
-                className="open-memory"
-              >
-                Open memory →
-              </Link>
-            )}
-
-            <button
-              className="delete"
-              onClick={() =>
-                deleteReminder(reminder.id)
-              }
-              aria-label="Delete reminder"
-            >
-              ×
-            </button>
-
-          </div>
-
-        ))}
-
-      </div>
 
     </div>
   );

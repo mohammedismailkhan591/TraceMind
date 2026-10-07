@@ -267,31 +267,31 @@ export default function CapturePage() {
         <div className="workspace-label">WORKSPACE</div>
 
         <nav className="nav">
-          <a href="/dashboard">
-            <span>⌂</span>
-            Home
-          </a>
+  <a href="/dashboard">
+    <span>⌂</span>
+    Home
+  </a>
 
-          <a href="/search">
-            <span>⌕</span>
-            Search
-          </a>
+  <a href="/capture" className="active">
+    <span>＋</span>
+    Capture
+  </a>
 
-          <a href="/capture" className="active">
-            <span>＋</span>
-            Capture
-          </a>
+  <a href="/memories">
+    <span>▣</span>
+    Memories
+  </a>
 
-          <a href="/memories">
-            <span>▣</span>
-            Memories
-          </a>
+  <a href="/Timeline">
+    <span>◫</span>
+    Timeline
+  </a>
 
-          <a href="/reminders">
-            <span>◷</span>
-            Reminders
-          </a>
-        </nav>
+  <a href="/reminders">
+    <span>◷</span>
+    Reminders
+  </a>
+</nav>
 
         <a href="/profile" className="account">
           <div className="avatar">M</div>

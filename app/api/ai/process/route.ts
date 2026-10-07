@@ -1,14 +1,25 @@
+
 import { NextResponse } from "next/server";
 import OpenAI from "openai";
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
-
 export async function POST(request: Request) {
   try {
-    const body = await request.json();
+    const apiKey = process.env.OPENAI_API_KEY;
 
+    if (!apiKey) {
+      return NextResponse.json(
+        {
+          error: "AI feature is not configured yet.",
+        },
+        { status: 503 }
+      );
+    }
+
+    const openai = new OpenAI({
+      apiKey,
+    });
+
+    const body = await request.json();
     const text = body.text;
 
     if (!text || typeof text !== "string") {
@@ -86,7 +97,6 @@ Rules:
     }
 
     return NextResponse.json(parsed);
-
   } catch (error) {
     console.error("AI processing error:", error);
 
@@ -98,3 +108,4 @@ Rules:
     );
   }
 }
+

@@ -1,81 +1,557 @@
+"use client";
+
+import { useEffect, useState } from "react";
 import Link from "next/link";
-import Logo from "../components/Logo";
+import styles from "./page.module.css";
+import { createClient } from "../lib/supabase";
 
-export default function Landing() {
+type Memory = {
+  id: string;
+  title: string;
+  category: string | null;
+  source_type: string;
+  created_at: string;
+};
+
+type Reminder = {
+  id: string;
+  title: string;
+  reminder_at: string;
+};
+
+export default function HomePage() {
+  const [name, setName] = useState("there");
+  const [memoryCount, setMemoryCount] = useState(0);
+  const [reminderCount, setReminderCount] = useState(0);
+  const [memories, setMemories] = useState<Memory[]>([]);
+  const [reminders, setReminders] = useState<Reminder[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    loadHome();
+  }, []);
+
+  async function loadHome() {
+    const supabase = createClient();
+
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    if (!user) {
+      setLoading(false);
+      return;
+    }
+
+    /* PROFILE */
+
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("full_name")
+      .eq("id", user.id)
+      .maybeSingle();
+
+    if (profile?.full_name) {
+      setName(profile.full_name.split(" ")[0]);
+    } else if (user.email) {
+      setName(user.email.split("@")[0]);
+    }
+
+    /* MEMORY COUNT */
+
+    const { count } = await supabase
+      .from("memories")
+      .select("*", {
+        count: "exact",
+        head: true,
+      })
+      .eq("user_id", user.id);
+
+    setMemoryCount(count || 0);
+
+    /* REMINDER COUNT */
+
+    const now = new Date().toISOString();
+
+    const { count: remindersTotal } = await supabase
+      .from("reminders")
+      .select("*", {
+        count: "exact",
+        head: true,
+      })
+      .eq("user_id", user.id)
+      .eq("completed", false)
+      .gte("reminder_at", now);
+
+    setReminderCount(remindersTotal || 0);
+
+    /* RECENT MEMORIES */
+
+    const { data: recent } = await supabase
+      .from("memories")
+      .select(
+        "id,title,category,source_type,created_at"
+      )
+      .eq("user_id", user.id)
+      .order("created_at", {
+        ascending: false,
+      })
+      .limit(4);
+
+    setMemories(recent || []);
+
+    /* UPCOMING REMINDERS */
+
+    const { data: upcoming } = await supabase
+      .from("reminders")
+      .select(
+        "id,title,reminder_at"
+      )
+      .eq("user_id", user.id)
+      .eq("completed", false)
+      .gte("reminder_at", now)
+      .order("reminder_at", {
+        ascending: true,
+      })
+      .limit(3);
+
+    setReminders(upcoming || []);
+
+    setLoading(false);
+  }
+
   return (
-    <main>
-      <nav className="landing-nav">
-        <Logo />
-        <div className="landing-links">
-          <a href="#features">Features</a>
-          <a href="#how">How it works</a>
-          <Link href="/login">Log in</Link>
-          <Link href="/signup" className="capture-button">Get started</Link>
-        </div>
-      </nav>
+    <main className={styles.page}>
+      <div className={styles.wrapper}>
 
-      <section className="hero">
-        <div>
-          <div className="eyebrow">YOUR PERSONAL INFORMATION MEMORY</div>
-          <h1>Remember the information.<br/><span>Forget where you saw it?</span></h1>
-          <p>TraceMind helps you capture scattered information, understand it, and find it again using the way you remember it—not the exact words.</p>
-          <div className="hero-actions">
-            <Link href="/signup" className="capture-button">Start for free →</Link>
-            <a href="#how" className="secondary-btn">See how it works</a>
+        {/* HEADER */}
+
+        <header className={styles.header}>
+          <div>
+            <p className={styles.label}>
+              PERSONAL INFORMATION SPACE
+            </p>
+
+            <h1>
+              Welcome back, {name}.
+            </h1>
+
+            <p className={styles.intro}>
+              Keep the things you discover, receive and
+              want to remember within reach.
+            </p>
           </div>
-          <div className="trust-line">Screenshots · PDFs · Links · Voice · Text</div>
-        </div>
-        <div className="hero-visual">
-          <div className="floating-card card-one"><span>🎓 Scholarship</span><strong>₹50,000</strong><small>Deadline: 15 Oct</small></div>
-          <div className="memory-orb">✦<small>TraceMind</small></div>
-          <div className="floating-card card-two"><span>⌕ Your search</span><strong>“engineering scholarship around 50k”</strong><small>94% match</small></div>
-        </div>
-      </section>
 
-      <section className="feature-section" id="features">
-        <div className="section-title"><div className="eyebrow">BUILT FOR REAL LIFE</div><h2>Everything you need to find information again.</h2></div>
-        <div className="landing-grid">
-          {[
-            ["⌕","Natural-language search","Search by what you remember, even when you forgot the exact title."],
-            ["📸","Capture anything","Save screenshots, PDFs, links, voice notes, or plain text."],
-            ["✦","AI understanding","Turn messy content into clear summaries, categories and important details."],
-            ["◷","Smart reminders","Detect deadlines and keep important dates from slipping away."],
-            ["↗","Related memories","Connect information that belongs together, such as a PDF and its application page."],
-            ["🔐","Privacy & control","Your information stays under your control. Delete or export it whenever you want."]
-          ].map(([icon,title,desc]) => <div className="landing-feature" key={title}><div>{icon}</div><h3>{title}</h3><p>{desc}</p></div>)}
-        </div>
-      </section>
+          <Link
+            href="/capture"
+            className={styles.capture}
+          >
+            <span>+</span>
+            Capture
+          </Link>
+        </header>
 
-      <section className="how-section" id="how">
-        <div className="section-title"><div className="eyebrow">HOW IT WORKS</div><h2>Three simple steps.</h2></div>
-        <div className="steps">
-          <div><b>01</b><h3>Capture</h3><p>Save the information before it disappears into your feed, chats or downloads.</p></div>
-          <div><b>02</b><h3>Understand</h3><p>TraceMind processes it and highlights the details that matter.</p></div>
-          <div><b>03</b><h3>Find it later</h3><p>Describe what you remember and TraceMind helps you trace it back.</p></div>
-        </div>
-      </section>
+        {/* OVERVIEW */}
 
-      <section className="cta-section">
-        <h2>Stop searching everywhere.</h2><p>Start building a memory of the information that matters to you.</p>
-        <Link href="/signup" className="capture-button">Create your TraceMind →</Link>
-      </section>
+        <section className={styles.overview}>
 
-      <footer><Logo /><span>© 2026 TraceMind. Your information, your control.</span></footer>
+          <div className={styles.overviewItem}>
+            <span>Saved information</span>
 
-      <style>{`
-        .landing-nav{height:76px;display:flex;align-items:center;justify-content:space-between;padding:0 6%;background:#fff}
-        .landing-links{display:flex;align-items:center;gap:25px;color:#666b7b;font-size:14px;font-weight:600}
-        .hero{min-height:610px;padding:85px 8%;display:grid;grid-template-columns:1fr 1fr;align-items:center;gap:40px;background:radial-gradient(circle at 75% 45%,#e9e6ff 0,#f7f8fc 35%,#f7f8fc 70%)}
-        .hero h1{font-size:55px;line-height:1.04;max-width:700px}.hero h1 span{color:#6558f5}.hero p{font-size:17px;line-height:1.7;color:#6b7080;max-width:610px}
-        .hero-actions{display:flex;gap:10px;margin:28px 0}.trust-line{font-size:12px;color:#999dac}
-        .hero-visual{min-height:450px;position:relative;display:grid;place-items:center}.memory-orb{width:190px;height:190px;border-radius:50%;display:grid;place-items:center;background:linear-gradient(145deg,#776cff,#4d43d4);color:#fff;font-size:70px;box-shadow:0 30px 80px rgba(101,88,245,.28)}.memory-orb small{position:absolute;margin-top:120px;font-size:12px;letter-spacing:2px}
-        .floating-card{position:absolute;background:#fff;border:1px solid #e6e5f0;border-radius:16px;padding:16px;box-shadow:0 20px 60px rgba(30,31,55,.12);display:grid;gap:5px}.floating-card span{font-size:12px;color:#777b89}.floating-card strong{font-size:18px}.floating-card small{font-size:11px;color:#9a9dab}.card-one{top:65px;left:3%;transform:rotate(-4deg)}.card-two{right:0;bottom:50px;width:270px;transform:rotate(3deg)}
-        .feature-section,.how-section{padding:95px 8%;background:#fff}.section-title{max-width:700px;margin-bottom:35px}.section-title h2{font-size:38px;margin-top:8px}.landing-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}.landing-feature{padding:25px;border:1px solid #e7e8ef;border-radius:17px}.landing-feature>div{font-size:25px}.landing-feature h3{margin:15px 0 7px}.landing-feature p,.steps p{color:#717585;line-height:1.6;font-size:14px}
-        .how-section{background:#f7f8fc}.steps{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}.steps>div{background:#fff;padding:28px;border-radius:17px;border:1px solid #e5e6ed}.steps b{color:#6558f5}.steps h3{font-size:21px}
-        .cta-section{padding:100px 20px;text-align:center;background:#211d50;color:#fff}.cta-section h2{font-size:40px}.cta-section p{color:#c9c6e9;margin-bottom:28px}
-        footer{padding:28px 8%;display:flex;justify-content:space-between;align-items:center;background:#fff;color:#8a8e9d;font-size:12px}
-        @media(max-width:800px){.landing-links a:not(.capture-button){display:none}.hero{grid-template-columns:1fr;padding:65px 7%}.hero h1{font-size:40px}.hero-visual{min-height:360px}.landing-grid,.steps{grid-template-columns:1fr}.section-title h2{font-size:30px}footer{display:grid;gap:15px}}
-      `}</style>
+            <strong>
+              {loading ? "—" : memoryCount}
+            </strong>
+          </div>
+
+          <div className={styles.divider} />
+
+          <div className={styles.overviewItem}>
+            <span>Upcoming reminders</span>
+
+            <strong>
+              {loading ? "—" : reminderCount}
+            </strong>
+          </div>
+
+          <div className={styles.divider} />
+
+          <div className={styles.overviewItem}>
+            <span>Your library</span>
+
+            <Link href="/memories">
+              Open memories →
+            </Link>
+          </div>
+
+        </section>
+
+        {/* MAIN */}
+
+        <section className={styles.mainGrid}>
+
+          {/* QUICK CAPTURE */}
+
+          <div className={styles.section}>
+
+            <div className={styles.sectionHeader}>
+              <div>
+                <p>QUICK CAPTURE</p>
+
+                <h2>
+                  Save something
+                </h2>
+              </div>
+            </div>
+
+            <div className={styles.captureList}>
+
+              <Link
+                href="/capture?type=image"
+                className={styles.captureRow}
+              >
+                <div className={styles.rowIcon}>
+                  IMG
+                </div>
+
+                <div>
+                  <strong>
+                    Screenshot or image
+                  </strong>
+
+                  <span>
+                    Save something you saw.
+                  </span>
+                </div>
+
+                <b>→</b>
+              </Link>
+
+              <Link
+                href="/capture?type=pdf"
+                className={styles.captureRow}
+              >
+                <div className={styles.rowIcon}>
+                  PDF
+                </div>
+
+                <div>
+                  <strong>
+                    PDF or document
+                  </strong>
+
+                  <span>
+                    Keep useful documents together.
+                  </span>
+                </div>
+
+                <b>→</b>
+              </Link>
+
+              <Link
+                href="/capture?type=link"
+                className={styles.captureRow}
+              >
+                <div className={styles.rowIcon}>
+                  URL
+                </div>
+
+                <div>
+                  <strong>
+                    Website or link
+                  </strong>
+
+                  <span>
+                    Save where you found it.
+                  </span>
+                </div>
+
+                <b>→</b>
+              </Link>
+
+              <Link
+                href="/capture?type=text"
+                className={styles.captureRow}
+              >
+                <div className={styles.rowIcon}>
+                  TXT
+                </div>
+
+                <div>
+                  <strong>
+                    Text or message
+                  </strong>
+
+                  <span>
+                    Keep important information.
+                  </span>
+                </div>
+
+                <b>→</b>
+              </Link>
+
+            </div>
+
+            <Link
+              href="/capture"
+              className={styles.primaryLink}
+            >
+              Open capture
+              <span>→</span>
+            </Link>
+
+          </div>
+
+          {/* REMINDERS */}
+
+          <div className={styles.section}>
+
+            <div className={styles.sectionHeader}>
+              <div>
+                <p>UPCOMING</p>
+
+                <h2>
+                  Reminders
+                </h2>
+              </div>
+
+              <Link
+                href="/reminders"
+                className={styles.textLink}
+              >
+                View all
+              </Link>
+            </div>
+
+            {reminders.length > 0 ? (
+              <div className={styles.reminderList}>
+
+                {reminders.map((item) => (
+                  <Link
+                    key={item.id}
+                    href="/reminders"
+                    className={styles.reminderRow}
+                  >
+                    <div className={styles.reminderDate}>
+                      {getDay(item.reminder_at)}
+
+                      <small>
+                        {getMonth(item.reminder_at)}
+                      </small>
+                    </div>
+
+                    <div>
+                      <strong>
+                        {item.title}
+                      </strong>
+
+                      <span>
+                        {getTime(item.reminder_at)}
+                      </span>
+                    </div>
+
+                    <b>→</b>
+                  </Link>
+                ))}
+
+              </div>
+            ) : (
+              <div className={styles.empty}>
+                <div className={styles.emptyTitle}>
+                  No upcoming reminders
+                </div>
+
+                <p>
+                  Important dates you add will appear
+                  here.
+                </p>
+
+                <Link
+                  href="/reminders"
+                  className={styles.secondaryLink}
+                >
+                  Manage reminders
+                </Link>
+              </div>
+            )}
+
+          </div>
+
+        </section>
+
+        {/* RECENT */}
+
+        <section className={styles.recentSection}>
+
+          <div className={styles.recentHeader}>
+            <div>
+              <p>RECENT ACTIVITY</p>
+
+              <h2>
+                Recently saved
+              </h2>
+            </div>
+
+            <Link
+              href="/memories"
+              className={styles.textLink}
+            >
+              View all
+            </Link>
+          </div>
+
+          {memories.length > 0 ? (
+            <div className={styles.memoryList}>
+
+              {memories.map((memory) => (
+                <Link
+                  key={memory.id}
+                  href={`/memories/${memory.id}`}
+                  className={styles.memoryRow}
+                >
+
+                  <div className={styles.memoryTitle}>
+                    <div className={styles.source}>
+                      {sourceLabel(
+                        memory.source_type
+                      )}
+                    </div>
+
+                    <div>
+                      <strong>
+                        {memory.title}
+                      </strong>
+
+                      <span>
+                        {memory.category ||
+                          "Other"}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className={styles.memoryDate}>
+                    {formatDate(
+                      memory.created_at
+                    )}
+                  </div>
+
+                  <div className={styles.memoryArrow}>
+                    →
+                  </div>
+
+                </Link>
+              ))}
+
+            </div>
+          ) : (
+            <div className={styles.noMemory}>
+              <p>
+                You haven't saved anything yet.
+              </p>
+
+              <Link
+                href="/capture"
+                className={styles.secondaryLink}
+              >
+                Capture your first item
+              </Link>
+            </div>
+          )}
+
+        </section>
+
+        {/* BOTTOM */}
+
+        <section className={styles.bottom}>
+
+          <div>
+            <span className={styles.bottomMark}>
+              TRACEMIND
+            </span>
+
+            <h2>
+              Don't remember where you saw it?
+              <br />
+              Save it now. Find it later.
+            </h2>
+          </div>
+
+          <Link
+            href="/capture"
+            className={styles.bottomAction}
+          >
+            Start capturing
+            <span>→</span>
+          </Link>
+
+        </section>
+
+      </div>
     </main>
   );
+}
+
+/* =========================================================
+   HELPERS
+   ========================================================= */
+
+function formatDate(date: string) {
+  return new Date(date).toLocaleDateString(
+    "en-IN",
+    {
+      day: "numeric",
+      month: "short",
+      year: "numeric",
+    }
+  );
+}
+
+function getDay(date: string) {
+  return new Date(date).toLocaleDateString(
+    "en-IN",
+    {
+      day: "2-digit",
+    }
+  );
+}
+
+function getMonth(date: string) {
+  return new Date(date).toLocaleDateString(
+    "en-IN",
+    {
+      month: "short",
+    }
+  );
+}
+
+function getTime(date: string) {
+  return new Date(date).toLocaleTimeString(
+    "en-IN",
+    {
+      hour: "numeric",
+      minute: "2-digit",
+    }
+  );
+}
+
+function sourceLabel(source: string) {
+  const value = source.toLowerCase();
+
+  if (value.includes("image")) return "IMG";
+  if (value.includes("pdf")) return "PDF";
+  if (
+    value.includes("link") ||
+    value.includes("web") ||
+    value.includes("url")
+  ) {
+    return "URL";
+  }
+
+  if (
+    value.includes("voice") ||
+    value.includes("audio")
+  ) {
+    return "AUD";
+  }
+
+  return "TXT";
 }

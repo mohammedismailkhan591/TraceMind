@@ -1,984 +1,1925 @@
 "use client";
 
-import { useRef, useState } from "react";
-import AppShell from "../../components/AppShell";
+import { useEffect, useRef, useState, type ChangeEvent } from "react";
 import { createClient } from "../../lib/supabase";
 
-type Mode = "file" | "link" | "text";
+type CaptureType = "image" | "pdf" | "link" | "text" | "voice";
 
-function detectCategory(text: string) {
-  const t = text.toLowerCase();
+const captureOptions: Array<{
+  type: CaptureType;
+  icon: string;
+  title: string;
+  description: string;
+  accept?: string;
+}> = [
+  {
+    type: "image",
+    icon: "⌁",
+    title: "Screenshot",
+    description: "Images from anywhere",
+    accept: "image/png,image/jpeg,image/webp",
+  },
+  {
+    type: "pdf",
+    icon: "▤",
+    title: "PDF",
+    description: "Documents & files",
+    accept: "application/pdf",
+  },
+  {
+    type: "link",
+    icon: "↗",
+    title: "Link",
+    description: "Websites & posts",
+  },
+  {
+    type: "text",
+    icon: "T",
+    title: "Text",
+    description: "Notes & messages",
+  },
+  {
+    type: "voice",
+    icon: "◉",
+    title: "Voice",
+    description: "Record a voice note",
+  },
+];
 
-  if (/scholarship|fellowship|stipend/.test(t)) return "Scholarship";
-  if (/internship|job|hiring|vacancy|career/.test(t)) return "Job";
-  if (/hackathon|hackfest|competition/.test(t)) return "Hackathon";
-  if (/course|bootcamp|workshop|class/.test(t)) return "Course";
-  if (/event|conference|meetup|webinar/.test(t)) return "Event";
-  if (/article|blog|research paper/.test(t)) return "Article";
-  if (/whatsapp|message|chat/.test(t)) return "Message";
+const categories = [
+  "Tech",
+  "Hackathons",
+  "Jobs",
+  "Courses",
+  "Events",
+  "Articles",
+  "Scholarships",
+  "Messages",
+  "Other",
+];
 
-  return "Other";
-}
-
-export default function CapturePage() {
+export default function Capture() {
   const supabase = createClient();
-  const inputRef = useRef<HTMLInputElement>(null);
 
-  const [mode, setMode] = useState<Mode>("file");
-  const [file, setFile] = useState<File | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const recordingTimerRef = useRef<ReturnType<typeof setInterval> | null>(
+    null
+  );
+  const audioChunksRef = useRef<Blob[]>([]);
+  const audioUrlRef = useRef<string | null>(null);
+
+  const [captureType, setCaptureType] =
+    useState<CaptureType>("image");
+
   const [title, setTitle] = useState("");
+  const [category, setCategory] = useState("Other");
   const [link, setLink] = useState("");
   const [text, setText] = useState("");
-  const [message, setMessage] = useState("");
-  const [saving, setSaving] = useState(false);
+  const [file, setFile] = useState<File | null>(null);
+  const [dragging, setDragging] = useState(false);
+  const [loading, setLoading] = useState(false);
 
-  const chooseFile = (next?: File) => {
-    if (!next) return;
+  const [status, setStatus] = useState<{
+    type: "success" | "error";
+    text: string;
+  } | null>(null);
 
-    if (
-      !next.type.startsWith("image/") &&
-      next.type !== "application/pdf"
-    ) {
-      setMessage("Choose an image or PDF.");
-      return;
+  // Voice recording
+  const [recording, setRecording] = useState(false);
+  const [recordingTime, setRecordingTime] = useState(0);
+  const [audioBlob, setAudioBlob] = useState<Blob | null>(null);
+  const [audioUrl, setAudioUrl] = useState<string | null>(null);
+
+  function resetStatus() {
+    setStatus(null);
+  }
+
+  function stopRecordingTimer() {
+    if (recordingTimerRef.current) {
+      clearInterval(recordingTimerRef.current);
+      recordingTimerRef.current = null;
+    }
+  }
+
+  function clearRecording() {
+    stopRecordingTimer();
+
+    const recorder = mediaRecorderRef.current;
+
+    if (recorder && recorder.state !== "inactive") {
+      try {
+        recorder.stop();
+      } catch {
+        // Recorder may already have stopped.
+      }
     }
 
-    if (next.size > 10 * 1024 * 1024) {
-      setMessage("Files must be smaller than 10 MB.");
-      return;
+    mediaRecorderRef.current = null;
+    audioChunksRef.current = [];
+
+    if (audioUrlRef.current) {
+      URL.revokeObjectURL(audioUrlRef.current);
+      audioUrlRef.current = null;
     }
 
-    setFile(next);
-    setMessage("");
-  };
+    setRecording(false);
+    setRecordingTime(0);
+    setAudioBlob(null);
+    setAudioUrl(null);
+  }
 
-  const reset = () => {
+  function changeType(type: CaptureType) {
+    if (recording) {
+      stopRecording();
+    }
+
+    setCaptureType(type);
     setFile(null);
-    setTitle("");
     setLink("");
     setText("");
-    setMessage("");
+    clearRecording();
+    resetStatus();
 
-    if (inputRef.current) {
-      inputRef.current.value = "";
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
     }
-  };
+  }
 
-  const save = async () => {
-    setSaving(true);
-    setMessage("");
+  function selectFile(selected: File | null) {
+    if (!selected) return;
+
+    setFile(selected);
+    resetStatus();
+
+    if (!title.trim()) {
+      setTitle(
+        selected.name.replace(/\.[^/.]+$/, "")
+      );
+    }
+  }
+
+  function handleFileChange(
+    event: ChangeEvent<HTMLInputElement>
+  ) {
+    selectFile(event.target.files?.[0] ?? null);
+  }
+
+  function isValidFile(selected: File) {
+    if (captureType === "image") {
+      return selected.type.startsWith("image/");
+    }
+
+    if (captureType === "pdf") {
+      return selected.type === "application/pdf";
+    }
+
+    return false;
+  }
+
+  async function startRecording() {
+    resetStatus();
 
     try {
-      const { data: auth } = await supabase.auth.getUser();
-      const user = auth.user;
-
-      if (!user) {
-        throw new Error("Please log in again.");
+      if (!navigator.mediaDevices?.getUserMedia) {
+        throw new Error(
+          "Voice recording is not supported by this browser."
+        );
       }
 
-      /* ---------------- FILE ---------------- */
+      const stream =
+        await navigator.mediaDevices.getUserMedia({
+          audio: true,
+        });
 
-      if (mode === "file") {
-        if (!file) {
-          throw new Error("Choose a screenshot or PDF first.");
+      const mimeType = MediaRecorder.isTypeSupported(
+        "audio/webm;codecs=opus"
+      )
+        ? "audio/webm;codecs=opus"
+        : "audio/webm";
+
+      const recorder = new MediaRecorder(stream, {
+        mimeType,
+      });
+
+      audioChunksRef.current = [];
+
+      recorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          audioChunksRef.current.push(event.data);
+        }
+      };
+
+      recorder.onstop = () => {
+        const blob = new Blob(
+          audioChunksRef.current,
+          {
+            type:
+              recorder.mimeType ||
+              "audio/webm",
+          }
+        );
+
+        const newAudioUrl =
+          URL.createObjectURL(blob);
+
+        if (audioUrlRef.current) {
+          URL.revokeObjectURL(
+            audioUrlRef.current
+          );
         }
 
-        const safeName = file.name.replace(/[^\w.-]/g, "_");
+        audioUrlRef.current =
+          newAudioUrl;
 
-        const path = `${user.id}/${Date.now()}-${safeName}`;
+        setAudioBlob(blob);
+        setAudioUrl(newAudioUrl);
+        setRecording(false);
 
-        const { error: uploadError } = await supabase.storage
-          .from("memory-assets")
-          .upload(path, file, {
-            upsert: false,
-          });
+        stream
+          .getTracks()
+          .forEach((track) => track.stop());
 
-        if (uploadError) {
-          throw uploadError;
-        }
+        stopRecordingTimer();
+        mediaRecorderRef.current = null;
+      };
 
-        const { data: memory, error: memoryError } = await supabase
+      recorder.onerror = () => {
+        stream
+          .getTracks()
+          .forEach((track) => track.stop());
+
+        stopRecordingTimer();
+
+        setRecording(false);
+
+        setStatus({
+          type: "error",
+          text: "The recording could not be started. Please try again.",
+        });
+      };
+
+      recorder.start();
+
+      mediaRecorderRef.current = recorder;
+
+      setRecording(true);
+      setRecordingTime(0);
+
+      recordingTimerRef.current =
+        setInterval(() => {
+          setRecordingTime(
+            (previous) => previous + 1
+          );
+        }, 1000);
+    } catch (error) {
+      const err =
+        error as DOMException;
+
+      let message =
+        "Could not access your microphone.";
+
+      if (
+        err?.name ===
+        "NotAllowedError"
+      ) {
+        message =
+          "Microphone permission was denied. Allow microphone access for localhost and try again.";
+      } else if (
+        err?.name ===
+        "NotFoundError"
+      ) {
+        message =
+          "No microphone was found on this device.";
+      } else if (
+        err?.name ===
+        "NotReadableError"
+      ) {
+        message =
+          "Your microphone is being used by another application.";
+      } else if (
+        error instanceof Error &&
+        error.message
+      ) {
+        message = error.message;
+      }
+
+      setStatus({
+        type: "error",
+        text: message,
+      });
+    }
+  }
+
+  function stopRecording() {
+    const recorder =
+      mediaRecorderRef.current;
+
+    stopRecordingTimer();
+
+    if (
+      recorder &&
+      recorder.state !== "inactive"
+    ) {
+      recorder.stop();
+    } else {
+      setRecording(false);
+    }
+  }
+
+  function formatRecordingTime(
+    seconds: number
+  ) {
+    const minutes = Math.floor(
+      seconds / 60
+    );
+
+    const remainingSeconds =
+      seconds % 60;
+
+    return `${String(minutes).padStart(
+      2,
+      "0"
+    )}:${String(
+      remainingSeconds
+    ).padStart(2, "0")}`;
+  }
+
+  /**
+   * Get the authenticated user safely.
+   *
+   * First use the existing browser session.
+   * If the session is not available, ask Supabase
+   * to refresh it.
+   */
+  async function getAuthenticatedUser() {
+    const {
+      data: sessionData,
+      error: sessionError,
+    } =
+      await supabase.auth.getSession();
+
+    if (
+      sessionData?.session?.user
+    ) {
+      return sessionData.session.user;
+    }
+
+    const {
+      data: refreshData,
+      error: refreshError,
+    } =
+      await supabase.auth.refreshSession();
+
+    if (
+      refreshData?.session?.user
+    ) {
+      return refreshData.session.user;
+    }
+
+    if (refreshError) {
+      throw new Error(
+        `Your login session could not be restored. ${refreshError.message}`
+      );
+    }
+
+    if (sessionError) {
+      throw new Error(
+        `Your login session could not be read. ${sessionError.message}`
+      );
+    }
+
+    throw new Error(
+      "Your TraceMind login session is missing. Please log in again."
+    );
+  }
+
+  async function saveMemory() {
+    resetStatus();
+
+    if (!title.trim()) {
+      setStatus({
+        type: "error",
+        text: "Give this memory a short title first.",
+      });
+      return;
+    }
+
+    if (
+      (captureType === "image" ||
+        captureType === "pdf") &&
+      !file
+    ) {
+      setStatus({
+        type: "error",
+        text: "Choose a file before saving.",
+      });
+      return;
+    }
+
+    if (
+      file &&
+      !isValidFile(file)
+    ) {
+      setStatus({
+        type: "error",
+        text:
+          captureType === "pdf"
+            ? "Please choose a PDF file."
+            : "Please choose an image file.",
+      });
+      return;
+    }
+
+    if (
+      captureType === "link" &&
+      !link.trim()
+    ) {
+      setStatus({
+        type: "error",
+        text:
+          "Paste the link you want TraceMind to remember.",
+      });
+      return;
+    }
+
+    if (
+      captureType === "text" &&
+      !text.trim()
+    ) {
+      setStatus({
+        type: "error",
+        text:
+          "Add some text before saving.",
+      });
+      return;
+    }
+
+    if (
+      captureType === "voice" &&
+      !audioBlob
+    ) {
+      setStatus({
+        type: "error",
+        text:
+          "Record a voice note before saving.",
+      });
+      return;
+    }
+
+    setLoading(true);
+
+    try {
+      /*
+       * IMPORTANT:
+       * Get the user from the current Supabase
+       * session before inserting anything.
+       */
+      const user =
+        await getAuthenticatedUser();
+
+      /*
+       * Create the memory record.
+       */
+      const {
+        data: memory,
+        error: memoryError,
+      } =
+        await supabase
           .from("memories")
           .insert({
             user_id: user.id,
-            title: title.trim() || file.name,
-            summary:
-              "Saved file. Open the memory to view the original.",
-            content: "",
-            category:
-              file.type === "application/pdf"
-                ? "Document"
-                : "Image",
-            source_type:
-              file.type === "application/pdf"
-                ? "PDF"
-                : "Screenshot",
+            title: title.trim(),
+            category,
+            source_type: captureType,
+
+            source_url:
+              captureType === "link"
+                ? link.trim()
+                : null,
+
+            content:
+              captureType === "text"
+                ? text.trim()
+                : null,
+
+            summary: null,
+
             metadata: {
-              processing: "local",
-              file_name: file.name,
-              mime_type: file.type,
-              file_size: file.size,
+              capture_type:
+                captureType,
+
+              processing_status:
+                captureType ===
+                  "text" ||
+                captureType ===
+                  "link"
+                  ? "ready"
+                  : "pending",
             },
           })
           .select("id")
           .single();
 
-        if (memoryError) {
-          throw memoryError;
+      if (memoryError) {
+        throw new Error(
+          memoryError.message
+        );
+      }
+
+      if (!memory) {
+        throw new Error(
+          "TraceMind could not create the memory record."
+        );
+      }
+
+      /*
+       * Screenshot / PDF / Voice upload.
+       */
+      if (
+        file ||
+        audioBlob
+      ) {
+        const uploadFile =
+          file ??
+          new File(
+            [audioBlob!],
+            `voice-${Date.now()}.webm`,
+            {
+              type:
+                audioBlob!.type ||
+                "audio/webm",
+            }
+          );
+
+        const cleanName =
+          uploadFile.name.replace(
+            /[^a-zA-Z0-9._-]/g,
+            "-"
+          );
+
+        const storagePath =
+          `${user.id}/${Date.now()}-${cleanName}`;
+
+        const {
+          error: uploadError,
+        } =
+          await supabase.storage
+            .from(
+              "memory-assets"
+            )
+            .upload(
+              storagePath,
+              uploadFile,
+              {
+                contentType:
+                  uploadFile.type ||
+                  "application/octet-stream",
+                upsert: false,
+              }
+            );
+
+        if (uploadError) {
+          await supabase
+            .from("memories")
+            .delete()
+            .eq(
+              "id",
+              memory.id
+            );
+
+          const raw =
+            uploadError.message.toLowerCase();
+
+          if (
+            raw.includes("bucket") &&
+            raw.includes("not found")
+          ) {
+            throw new Error(
+              "The memory-assets storage bucket could not be found."
+            );
+          }
+
+          throw new Error(
+            `Upload failed: ${uploadError.message}`
+          );
         }
 
-        const { error: assetError } = await supabase
-          .from("memory_assets")
-          .insert({
-            memory_id: memory.id,
-            user_id: user.id,
-            storage_path: path,
-            file_name: file.name,
-            mime_type: file.type,
-            file_size: file.size,
-          });
+        /*
+         * Save the uploaded file information.
+         */
+        const {
+          error: assetError,
+        } =
+          await supabase
+            .from("memory_assets")
+            .insert({
+              memory_id:
+                memory.id,
+
+              user_id:
+                user.id,
+
+              storage_path:
+                storagePath,
+
+              file_name:
+                uploadFile.name,
+
+              mime_type:
+                uploadFile.type,
+
+              file_size:
+                uploadFile.size,
+            });
 
         if (assetError) {
-          throw assetError;
+          await supabase.storage
+            .from(
+              "memory-assets"
+            )
+            .remove([
+              storagePath,
+            ]);
+
+          await supabase
+            .from("memories")
+            .delete()
+            .eq(
+              "id",
+              memory.id
+            );
+
+          throw new Error(
+            `File record could not be saved: ${assetError.message}`
+          );
         }
-
-        setMessage("Memory saved successfully.");
-        reset();
-        return;
       }
 
-      /* ---------------- LINK ---------------- */
+      /*
+       * Success.
+       */
+      setStatus({
+        type: "success",
+        text:
+          "Saved. This memory is now part of your TraceMind library.",
+      });
 
-      if (mode === "link") {
-        const raw = link.trim();
+      setTitle("");
+      setCategory("Other");
+      setLink("");
+      setText("");
+      setFile(null);
 
-        if (!raw) {
-          throw new Error("Enter a website link.");
-        }
+      clearRecording();
 
-        const url = new URL(
-          /^https?:\/\//i.test(raw)
-            ? raw
-            : `https://${raw}`
-        );
-
-        const { error } = await supabase
-          .from("memories")
-          .insert({
-            user_id: user.id,
-            title: title.trim() || url.hostname,
-            summary: `Saved website: ${url.hostname}`,
-            content: url.toString(),
-            category: "Website",
-            source_type: "Link",
-            source_url: url.toString(),
-            metadata: {
-              processing: "local",
-            },
-          });
-
-        if (error) {
-          throw error;
-        }
-
-        setMessage("Website saved successfully.");
-        reset();
-        return;
+      if (fileInputRef.current) {
+        fileInputRef.current.value =
+          "";
       }
-
-      /* ---------------- TEXT ---------------- */
-
-      const clean = text.trim();
-
-      if (clean.length < 3) {
-        throw new Error("Enter at least a few words.");
-      }
-
-      const summary = clean
-        .replace(/\s+/g, " ")
-        .slice(0, 220);
-
-      const keywords = Array.from(
-        new Set(
-          clean
-            .toLowerCase()
-            .replace(/[^a-z0-9\s-]/g, " ")
-            .split(/\s+/)
-            .filter((word) => word.length > 3)
-        )
-      ).slice(0, 15);
-
-      const { error } = await supabase
-        .from("memories")
-        .insert({
-          user_id: user.id,
-          title: title.trim() || clean.slice(0, 70),
-          summary:
-            summary.length < clean.length
-              ? `${summary}…`
-              : summary,
-          content: clean,
-          category: detectCategory(clean),
-          source_type: "Text",
-          metadata: {
-            processing: "local",
-            keywords,
-          },
-        });
-
-      if (error) {
-        throw error;
-      }
-
-      setMessage("Text memory saved successfully.");
-      reset();
     } catch (error) {
-      setMessage(
-        error instanceof Error
-          ? error.message
-          : "Something went wrong."
-      );
+      setStatus({
+        type: "error",
+        text:
+          error instanceof Error
+            ? error.message
+            : "Something went wrong while saving.",
+      });
     } finally {
-      setSaving(false);
+      setLoading(false);
     }
-  };
+  }
+
+  /*
+   * Cleanup only when the Capture page
+   * actually unmounts.
+   */
+  useEffect(() => {
+    return () => {
+      stopRecordingTimer();
+
+      const recorder =
+        mediaRecorderRef.current;
+
+      if (
+        recorder &&
+        recorder.state !==
+          "inactive"
+      ) {
+        try {
+          recorder.stop();
+        } catch {
+          // Already stopped.
+        }
+      }
+
+      if (audioUrlRef.current) {
+        URL.revokeObjectURL(
+          audioUrlRef.current
+        );
+      }
+    };
+  }, []);
+
+  const activeOption =
+    captureOptions.find(
+      (option) =>
+        option.type === captureType
+    )!;
 
   return (
-    <AppShell>
-      <main className="capture-page">
-        <header className="capture-header">
+      <div className="capture-page">
+        <header className="capture-hero">
           <div>
-            <span className="eyebrow">YOUR INFORMATION</span>
-            <h1>Capture</h1>
+            <div className="capture-kicker">
+              CAPTURE
+            </div>
+
+            <h1>
+              Save it before you forget it.
+            </h1>
+
             <p>
-              Save something now and find it again whenever you need it.
+              Bring information into
+              TraceMind. We'll keep the
+              original and make it easier
+              to find later.
             </p>
           </div>
 
-          <div className="private-badge">
-            <span className="private-dot" />
-            Private workspace
+          <div className="capture-badge">
+            <span>●</span>
+            Private by default
           </div>
         </header>
 
-        <section className="capture-container">
-          {/* SOURCE SELECTOR */}
-
-          <div className="source-selector">
-            <button
-              type="button"
-              className={mode === "file" ? "source active" : "source"}
-              onClick={() => {
-                setMode("file");
-                setMessage("");
-              }}
-            >
-              <span className="source-icon">
-                <UploadIcon />
-              </span>
-
-              <span>
-                <strong>File</strong>
-                <small>Screenshot or PDF</small>
-              </span>
-            </button>
-
-            <button
-              type="button"
-              className={mode === "link" ? "source active" : "source"}
-              onClick={() => {
-                setMode("link");
-                setMessage("");
-              }}
-            >
-              <span className="source-icon">
-                <LinkIcon />
-              </span>
-
-              <span>
-                <strong>Website</strong>
-                <small>Save a useful URL</small>
-              </span>
-            </button>
-
-            <button
-              type="button"
-              className={mode === "text" ? "source active" : "source"}
-              onClick={() => {
-                setMode("text");
-                setMessage("");
-              }}
-            >
-              <span className="source-icon">
-                <TextIcon />
-              </span>
-
-              <span>
-                <strong>Text</strong>
-                <small>Message or note</small>
-              </span>
-            </button>
-          </div>
-
-          {/* MAIN CARD */}
-
-          <section className="capture-card">
-            <div className="card-header">
+        <section className="capture-workspace">
+          <div className="capture-main">
+            <div className="section-heading">
               <div>
-                <span className="eyebrow">NEW MEMORY</span>
+                <span>01</span>
 
                 <h2>
-                  {mode === "file"
-                    ? "Upload a file"
-                    : mode === "link"
-                    ? "Save a website"
-                    : "Save some text"}
+                  Choose what you're saving
                 </h2>
               </div>
 
-              <span className="step-label">01</span>
+              <p>
+                Start with the format that
+                matches what you have.
+              </p>
             </div>
 
-            {/* TITLE */}
+            <div className="capture-options">
+              {captureOptions.map(
+                (option) => (
+                  <button
+                    key={option.type}
+                    type="button"
+                    className={`capture-option ${
+                      captureType ===
+                      option.type
+                        ? "selected"
+                        : ""
+                    }`}
+                    onClick={() =>
+                      changeType(
+                        option.type
+                      )
+                    }
+                  >
+                    <span className="option-icon">
+                      {option.icon}
+                    </span>
 
-            <label className="field">
-              <span>
-                Title <em>Optional</em>
-              </span>
+                    <span className="option-copy">
+                      <strong>
+                        {option.title}
+                      </strong>
 
-              <input
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                placeholder="Give this memory a useful name"
-              />
-            </label>
+                      <small>
+                        {option.description}
+                      </small>
+                    </span>
 
-            {/* FILE */}
+                    <span className="option-arrow">
+                      →
+                    </span>
+                  </button>
+                )
+              )}
+            </div>
 
-            {mode === "file" && (
+            <div className="section-heading second">
+              <div>
+                <span>02</span>
+
+                <h2>
+                  Add the memory
+                </h2>
+              </div>
+
+              <p>
+                A little context makes
+                future search much smarter.
+              </p>
+            </div>
+
+            <div className="form-grid">
+              <label className="field full">
+                <span>
+                  Memory title
+                </span>
+
+                <input
+                  value={title}
+                  onChange={(e) =>
+                    setTitle(
+                      e.target.value
+                    )
+                  }
+                  placeholder="Give it a name you'll recognize later"
+                />
+              </label>
+
+              <label className="field">
+                <span>
+                  Category
+                </span>
+
+                <select
+                  value={category}
+                  onChange={(e) =>
+                    setCategory(
+                      e.target.value
+                    )
+                  }
+                >
+                  {categories.map(
+                    (item) => (
+                      <option
+                        key={item}
+                      >
+                        {item}
+                      </option>
+                    )
+                  )}
+                </select>
+              </label>
+
+              <div className="field">
+                <span>
+                  Format
+                </span>
+
+                <div className="format-pill">
+                  <span>
+                    {
+                      activeOption.icon
+                    }
+                  </span>
+
+                  {
+                    activeOption.title
+                  }
+                </div>
+              </div>
+            </div>
+
+            {(captureType ===
+              "image" ||
+              captureType ===
+                "pdf") && (
               <div
                 className={`dropzone ${
-                  file ? "has-file" : ""
+                  dragging
+                    ? "dragging"
+                    : ""
                 }`}
-                onClick={() => inputRef.current?.click()}
-                onDragOver={(e) => e.preventDefault()}
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  setDragging(true);
+                }}
+                onDragLeave={() =>
+                  setDragging(false)
+                }
                 onDrop={(e) => {
                   e.preventDefault();
-                  chooseFile(e.dataTransfer.files?.[0]);
+                  setDragging(false);
+
+                  const dropped =
+                    e.dataTransfer.files?.[0];
+
+                  if (
+                    dropped &&
+                    isValidFile(
+                      dropped
+                    )
+                  ) {
+                    selectFile(
+                      dropped
+                    );
+                  } else {
+                    setStatus({
+                      type: "error",
+                      text:
+                        captureType ===
+                        "pdf"
+                          ? "Drop a PDF file here."
+                          : "Drop an image file here.",
+                    });
+                  }
                 }}
+                onClick={() =>
+                  fileInputRef.current?.click()
+                }
               >
                 <input
-                  ref={inputRef}
-                  hidden
+                  ref={fileInputRef}
                   type="file"
-                  accept="image/*,.pdf,application/pdf"
-                  onChange={(e) =>
-                    chooseFile(e.target.files?.[0])
+                  hidden
+                  accept={
+                    activeOption.accept
+                  }
+                  onChange={
+                    handleFileChange
                   }
                 />
 
-                <div className="upload-circle">
-                  {file ? <CheckIcon /> : <UploadIcon />}
-                </div>
+                {file ? (
+                  <>
+                    <div className="file-mark">
+                      ✓
+                    </div>
 
-                <strong>
-                  {file
-                    ? file.name
-                    : "Drop a screenshot or PDF here"}
-                </strong>
+                    <strong>
+                      {file.name}
+                    </strong>
 
-                <span>
-                  {file
-                    ? `${(
+                    <small>
+                      {(
                         file.size /
                         1024 /
                         1024
-                      ).toFixed(2)} MB · ready to save`
-                    : "or click to browse · maximum 10 MB"}
-                </span>
+                      ).toFixed(2)}{" "}
+                      MB · Ready to
+                      save
+                    </small>
 
-                {file && (
-                  <button
-                    type="button"
-                    className="change-file"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setFile(null);
+                    <button
+                      type="button"
+                      className="change-file"
+                      onClick={(e) => {
+                        e.stopPropagation();
 
-                      if (inputRef.current) {
-                        inputRef.current.value = "";
-                      }
-                    }}
-                  >
-                    Choose another file
-                  </button>
+                        fileInputRef.current?.click();
+                      }}
+                    >
+                      Choose another
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <div className="upload-mark">
+                      ↑
+                    </div>
+
+                    <strong>
+                      Drop your{" "}
+                      {captureType ===
+                      "pdf"
+                        ? "PDF"
+                        : "image"}{" "}
+                      here
+                    </strong>
+
+                    <small>
+                      or click to browse
+                      your device
+                    </small>
+                  </>
                 )}
               </div>
             )}
 
-            {/* LINK */}
-
-            {mode === "link" && (
-              <label className="field">
-                <span>Website URL</span>
-
-                <input
-                  value={link}
-                  onChange={(e) => setLink(e.target.value)}
-                  placeholder="https://example.com/..."
-                  type="url"
-                />
-              </label>
-            )}
-
-            {/* TEXT */}
-
-            {mode === "text" && (
-              <label className="field">
-                <span>Information</span>
-
-                <textarea
-                  value={text}
-                  onChange={(e) => setText(e.target.value)}
-                  placeholder="Paste the message, details or information you want to remember..."
-                  rows={9}
-                />
-              </label>
-            )}
-
-            {/* FOOTER */}
-
-            <div className="capture-footer">
-              <div className="message-area">
-                <span className="message-icon">
-                  <LockIcon />
+            {captureType ===
+              "link" && (
+              <label className="field block">
+                <span>
+                  Website or post URL
                 </span>
 
-                <p>
-                  {message ||
-                    "Your saved information stays in your private workspace."}
-                </p>
+                <input
+                  type="url"
+                  value={link}
+                  onChange={(e) =>
+                    setLink(
+                      e.target.value
+                    )
+                  }
+                  placeholder="https://..."
+                />
+              </label>
+            )}
+
+            {captureType ===
+              "text" && (
+              <label className="field block">
+                <span>
+                  Information
+                </span>
+
+                <textarea
+                  rows={8}
+                  value={text}
+                  onChange={(e) =>
+                    setText(
+                      e.target.value
+                    )
+                  }
+                  placeholder="Paste the message, note, quote or details you want to remember..."
+                />
+              </label>
+            )}
+
+            {captureType ===
+              "voice" && (
+              <div className="voice-recorder">
+                <div
+                  className={`voice-orb ${
+                    recording
+                      ? "recording"
+                      : ""
+                  }`}
+                >
+                  {recording
+                    ? "●"
+                    : "🎙"}
+                </div>
+
+                <div className="voice-time">
+                  {formatRecordingTime(
+                    recordingTime
+                  )}
+                </div>
+
+                {!recording &&
+                  !audioUrl && (
+                    <>
+                      <strong>
+                        Record a voice note
+                      </strong>
+
+                      <small>
+                        Speak naturally.
+                        You can review it
+                        before saving.
+                      </small>
+
+                      <button
+                        type="button"
+                        className="voice-button"
+                        onClick={
+                          startRecording
+                        }
+                      >
+                        ● Start recording
+                      </button>
+                    </>
+                  )}
+
+                {recording && (
+                  <>
+                    <strong>
+                      Recording…
+                    </strong>
+
+                    <small>
+                      TraceMind is
+                      listening.
+                    </small>
+
+                    <button
+                      type="button"
+                      className="voice-button stop"
+                      onClick={
+                        stopRecording
+                      }
+                    >
+                      ■ Stop recording
+                    </button>
+                  </>
+                )}
+
+                {audioUrl &&
+                  !recording && (
+                    <>
+                      <strong>
+                        Voice note ready
+                      </strong>
+
+                      <small>
+                        Listen before
+                        saving.
+                      </small>
+
+                      <audio
+                        className="voice-player"
+                        controls
+                        src={audioUrl}
+                      />
+
+                      <button
+                        type="button"
+                        className="voice-again"
+                        onClick={
+                          clearRecording
+                        }
+                      >
+                        Record again
+                      </button>
+                    </>
+                  )}
               </div>
+            )}
+
+            {status && (
+              <div
+                className={`status ${status.type}`}
+              >
+                {status.type ===
+                "success"
+                  ? "✓"
+                  : "!"}
+
+                <span>
+                  {status.text}
+                </span>
+              </div>
+            )}
+
+            <div className="save-row">
+              <p>
+                Your original file stays
+                private to your account.
+              </p>
 
               <button
                 type="button"
-                className="save-button"
-                onClick={save}
-                disabled={saving}
+                onClick={
+                  saveMemory
+                }
+                disabled={
+                  loading ||
+                  recording
+                }
               >
-                {saving ? "Saving..." : "Save memory"}
-
-                <ArrowIcon />
+                {loading
+                  ? "Saving…"
+                  : "Save memory →"}
               </button>
             </div>
-          </section>
+          </div>
+
+          <aside className="capture-side">
+            <div className="side-top">
+              <span className="spark">
+                ✦
+              </span>
+
+              <span>
+                TRACE MIND
+              </span>
+            </div>
+
+            <h3>
+              Capture once.
+              <br />
+              <em>
+                Find it when you need it.
+              </em>
+            </h3>
+
+            <p>
+              Every memory keeps its
+              original source while becoming
+              ready for smarter search and AI
+              understanding.
+            </p>
+
+            <div className="side-list">
+              <div>
+                <b>01</b>
+
+                <span>
+                  <strong>
+                    Keep the original
+                  </strong>
+
+                  <small>
+                    Your source stays
+                    attached to the memory.
+                  </small>
+                </span>
+              </div>
+
+              <div>
+                <b>02</b>
+
+                <span>
+                  <strong>
+                    Understand the details
+                  </strong>
+
+                  <small>
+                    AI can extract names,
+                    dates, topics and more.
+                  </small>
+                </span>
+              </div>
+
+              <div>
+                <b>03</b>
+
+                <span>
+                  <strong>
+                    Search by what you
+                    remember
+                  </strong>
+
+                  <small>
+                    You don't need the exact
+                    words.
+                  </small>
+                </span>
+              </div>
+            </div>
+
+            <div className="privacy-note">
+              <span>◉</span>
+
+              <div>
+                <strong>
+                  Private by default
+                </strong>
+
+                <small>
+                  Your files are stored in
+                  your account's private
+                  space.
+                </small>
+              </div>
+            </div>
+          </aside>
         </section>
-      </main>
+      </div>
 
       <style jsx>{`
         .capture-page {
-          min-height: 100vh;
-          background: #f7f8fa;
-          color: #17191e;
-          padding: 34px 40px 70px;
+          max-width: 1180px;
+          margin: 0 auto;
+          padding: 36px 28px 70px;
+          color: #171827;
         }
 
-        .capture-header {
-          max-width: 1080px;
-          margin: 0 auto 28px;
+        .capture-hero {
           display: flex;
-          align-items: center;
           justify-content: space-between;
-          gap: 20px;
+          align-items: flex-end;
+          gap: 30px;
+          margin-bottom: 28px;
         }
 
-        .eyebrow {
-          display: block;
-          color: #9b9fa7;
-          font-size: 9px;
+        .capture-kicker {
+          font-size: 11px;
+          letter-spacing: 0.18em;
           font-weight: 800;
-          letter-spacing: 0.16em;
-          text-transform: uppercase;
+          color: #6c5ce7;
+          margin-bottom: 9px;
         }
 
-        .capture-header h1 {
-          margin: 7px 0 5px;
-          font-size: 30px;
-          line-height: 1;
-          letter-spacing: -0.05em;
-          font-weight: 750;
+        .capture-hero h1 {
+          font-size: 42px;
+          line-height: 1.06;
+          letter-spacing: -0.045em;
+          margin: 0 0 10px;
         }
 
-        .capture-header p {
+        .capture-hero p {
           margin: 0;
-          color: #858990;
-          font-size: 12px;
+          max-width: 650px;
+          color: #72758a;
+          line-height: 1.6;
+          font-size: 15px;
         }
 
-        .private-badge {
-          display: flex;
-          align-items: center;
-          gap: 7px;
-          padding: 8px 11px;
+        .capture-badge {
+          border: 1px solid #e7e7ee;
           background: #fff;
-          border: 1px solid #e4e5e8;
           border-radius: 999px;
-          color: #777b83;
-          font-size: 9px;
+          padding: 9px 13px;
+          font-size: 12px;
+          color: #606275;
           white-space: nowrap;
         }
 
-        .private-dot {
-          width: 6px;
-          height: 6px;
-          border-radius: 50%;
-          background: #555960;
+        .capture-badge span {
+          color: #2e9b72;
+          margin-right: 6px;
         }
 
-        .capture-container {
-          width: min(920px, 100%);
-          margin: 0 auto;
-        }
-
-        /* SOURCE TABS */
-
-        .source-selector {
+        .capture-workspace {
           display: grid;
-          grid-template-columns: repeat(3, 1fr);
-          gap: 8px;
-          margin-bottom: 10px;
+          grid-template-columns: minmax(0, 1fr) 320px;
+          gap: 22px;
         }
 
-        .source {
-          display: flex;
-          align-items: center;
-          gap: 11px;
-          min-height: 62px;
-          padding: 10px 13px;
-          border: 1px solid #e3e4e7;
-          border-radius: 13px;
+        .capture-main,
+        .capture-side {
           background: #fff;
-          color: #70747c;
-          text-align: left;
-          cursor: pointer;
-          transition: 0.15s ease;
+          border: 1px solid #e7e7ee;
+          border-radius: 22px;
         }
 
-        .source:hover {
-          border-color: #c8cad0;
+        .capture-main {
+          padding: 28px;
         }
 
-        .source.active {
-          background: #17191e;
-          border-color: #17191e;
-          color: #fff;
-        }
-
-        .source-icon {
-          width: 35px;
-          height: 35px;
-          flex: 0 0 35px;
-          display: grid;
-          place-items: center;
-          border-radius: 9px;
-          background: #f1f2f4;
-          color: #62666e;
-        }
-
-        .source.active .source-icon {
-          background: #30333a;
-          color: #fff;
-        }
-
-        .source strong,
-        .source small {
-          display: block;
-        }
-
-        .source strong {
-          font-size: 11px;
-          font-weight: 700;
-        }
-
-        .source small {
-          margin-top: 3px;
-          color: #9a9da4;
-          font-size: 8px;
-        }
-
-        .source.active small {
-          color: #a7abb3;
-        }
-
-        /* CARD */
-
-        .capture-card {
-          background: #fff;
-          border: 1px solid #e3e4e7;
-          border-radius: 17px;
-          padding: 23px;
-          box-shadow: 0 12px 35px rgba(20, 22, 27, 0.035);
-        }
-
-        .card-header {
+        .section-heading {
           display: flex;
-          align-items: flex-start;
           justify-content: space-between;
-          margin-bottom: 21px;
-        }
-
-        .card-header h2 {
-          margin: 6px 0 0;
-          font-size: 18px;
-          line-height: 1.2;
-          letter-spacing: -0.035em;
-          font-weight: 750;
-        }
-
-        .step-label {
-          color: #a2a5ac;
-          font-size: 8px;
-          font-weight: 800;
-          letter-spacing: 0.12em;
-        }
-
-        /* FIELDS */
-
-        .field {
-          display: block;
+          gap: 20px;
+          align-items: flex-end;
           margin-bottom: 15px;
         }
 
-        .field > span {
-          display: block;
-          margin-bottom: 7px;
-          color: #666a72;
-          font-size: 9px;
-          font-weight: 800;
-          letter-spacing: 0.08em;
-          text-transform: uppercase;
+        .section-heading > div {
+          display: flex;
+          align-items: center;
+          gap: 11px;
         }
 
-        .field em {
-          margin-left: 4px;
-          color: #afb2b8;
-          font-style: normal;
-          font-weight: 500;
-          text-transform: none;
-          letter-spacing: 0;
+        .section-heading span {
+          font-size: 10px;
+          font-weight: 800;
+          letter-spacing: 0.08em;
+          color: #8b8da0;
+        }
+
+        .section-heading h2 {
+          font-size: 16px;
+          margin: 0;
+        }
+
+        .section-heading > p {
+          font-size: 12px;
+          color: #9698a7;
+          margin: 0;
+        }
+
+        .section-heading.second {
+          margin-top: 31px;
+        }
+
+        .capture-options {
+          display: grid;
+          grid-template-columns: repeat(2, 1fr);
+          gap: 10px;
+        }
+
+        .capture-option {
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          text-align: left;
+          border: 1px solid #e8e8ef;
+          background: #fbfbfd;
+          border-radius: 15px;
+          padding: 14px;
+          cursor: pointer;
+          transition: 0.18s ease;
+        }
+
+        .capture-option:hover {
+          border-color: #c9c4fa;
+          transform: translateY(-1px);
+        }
+
+        .capture-option.selected {
+          border-color: #8b7df0;
+          background: #f7f5ff;
+          box-shadow: 0 0 0 3px #eeeaff;
+        }
+
+        .option-icon {
+          width: 38px;
+          height: 38px;
+          display: grid;
+          place-items: center;
+          border-radius: 11px;
+          background: #fff;
+          border: 1px solid #ececf2;
+          font-weight: 700;
+          color: #6556d9;
+          flex-shrink: 0;
+        }
+
+        .option-copy {
+          display: grid;
+          gap: 3px;
+          flex: 1;
+        }
+
+        .option-copy strong {
+          font-size: 13px;
+        }
+
+        .option-copy small {
+          font-size: 11px;
+          color: #8a8c9b;
+        }
+
+        .option-arrow {
+          color: #aaa;
+        }
+
+        .form-grid {
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          gap: 14px;
+        }
+
+        .field {
+          display: grid;
+          gap: 7px;
+        }
+
+        .field.full,
+        .field.block {
+          grid-column: 1 / -1;
+        }
+
+        .field > span {
+          font-size: 11px;
+          font-weight: 700;
+          color: #515366;
         }
 
         .field input,
+        .field select,
         .field textarea {
           width: 100%;
           box-sizing: border-box;
+          border: 1px solid #e2e2ea;
+          background: #fff;
+          border-radius: 11px;
           padding: 12px 13px;
-          border: 1px solid #e0e1e4;
-          border-radius: 10px;
+          font: inherit;
+          font-size: 13px;
+          color: #222334;
           outline: none;
-          background: #fafafa;
-          color: #17191e;
-          font-family: inherit;
-          font-size: 12px;
-          transition: 0.15s ease;
         }
 
         .field textarea {
           resize: vertical;
-          min-height: 190px;
           line-height: 1.55;
         }
 
         .field input:focus,
+        .field select:focus,
         .field textarea:focus {
-          border-color: #b9bcc2;
-          background: #fff;
-          box-shadow: 0 0 0 3px rgba(23, 25, 30, 0.035);
+          border-color: #9a90ed;
+          box-shadow: 0 0 0 3px #f0eeff;
         }
 
-        /* DROPZONE */
+        .format-pill {
+          height: 42px;
+          box-sizing: border-box;
+          border: 1px solid #e7e7ee;
+          border-radius: 11px;
+          display: flex;
+          align-items: center;
+          gap: 9px;
+          padding: 0 13px;
+          font-size: 13px;
+          color: #55576a;
+          background: #fafafd;
+        }
+
+        .format-pill span {
+          color: #6758db;
+        }
 
         .dropzone {
-          min-height: 230px;
-          margin-bottom: 15px;
-          padding: 25px;
-          box-sizing: border-box;
+          margin-top: 14px;
+          border: 1.5px dashed #d7d6e4;
+          background: #fbfbfe;
+          border-radius: 16px;
+          min-height: 178px;
           display: flex;
           flex-direction: column;
           align-items: center;
           justify-content: center;
           text-align: center;
-          border: 1.5px dashed #d5d7db;
-          border-radius: 13px;
-          background: #fafbfc;
           cursor: pointer;
           transition: 0.18s ease;
         }
 
-        .dropzone:hover,
-        .dropzone.has-file {
-          border-color: #9da1a8;
-          background: #f7f8f9;
+        .dropzone.dragging {
+          border-color: #7769df;
+          background: #f5f3ff;
         }
 
-        .upload-circle {
-          width: 44px;
-          height: 44px;
-          margin-bottom: 11px;
+        .upload-mark,
+        .file-mark {
+          width: 42px;
+          height: 42px;
           display: grid;
           place-items: center;
           border-radius: 12px;
-          background: #17191e;
-          color: #fff;
+          background: #f0eeff;
+          color: #6758dc;
+          font-size: 20px;
+          margin-bottom: 10px;
+        }
+
+        .file-mark {
+          background: #eaf8f2;
+          color: #2e9b72;
         }
 
         .dropzone strong {
-          max-width: 90%;
-          overflow: hidden;
-          text-overflow: ellipsis;
-          white-space: nowrap;
-          font-size: 11px;
-          font-weight: 700;
+          font-size: 13px;
         }
 
-        .dropzone > span {
+        .dropzone small {
+          font-size: 11px;
+          color: #8d8f9e;
           margin-top: 5px;
-          color: #999da5;
-          font-size: 9px;
         }
 
         .change-file {
-          margin-top: 12px;
-          padding: 7px 10px;
-          border: 1px solid #dedfe2;
-          border-radius: 7px;
-          background: #fff;
-          color: #60646b;
-          font-size: 9px;
+          border: 0;
+          background: none;
+          color: #6658d9;
+          font-size: 11px;
+          font-weight: 700;
+          margin-top: 9px;
           cursor: pointer;
         }
 
-        .change-file:hover {
-          border-color: #bfc2c7;
-        }
-
-        /* FOOTER */
-
-        .capture-footer {
+        .voice-recorder {
+          margin-top: 14px;
+          border: 1px solid #e3e3eb;
+          background: #fbfbfe;
+          border-radius: 18px;
+          min-height: 260px;
+          padding: 28px;
           display: flex;
+          flex-direction: column;
           align-items: center;
-          justify-content: space-between;
-          gap: 15px;
-          padding-top: 16px;
-          border-top: 1px solid #ececef;
+          justify-content: center;
+          text-align: center;
         }
 
-        .message-area {
-          min-width: 0;
-          display: flex;
-          align-items: center;
-          gap: 8px;
-        }
-
-        .message-icon {
-          width: 26px;
-          height: 26px;
-          flex: 0 0 26px;
+        .voice-orb {
+          width: 72px;
+          height: 72px;
+          border-radius: 50%;
           display: grid;
           place-items: center;
-          border-radius: 7px;
-          background: #f2f3f5;
-          color: #777b83;
+          background: #f0eeff;
+          color: #6758dc;
+          font-size: 25px;
+          margin-bottom: 15px;
+          transition: 0.2s ease;
         }
 
-        .message-area p {
-          margin: 0;
-          color: #989ca3;
-          font-size: 9px;
+        .voice-orb.recording {
+          background: #fff0f0;
+          color: #d64545;
+          box-shadow: 0 0 0 10px rgba(214, 69, 69, 0.08);
+          animation: recordingPulse 1.5s infinite;
+        }
+
+        @keyframes recordingPulse {
+          0% {
+            box-shadow: 0 0 0 0 rgba(214, 69, 69, 0.18);
+          }
+
+          70% {
+            box-shadow: 0 0 0 12px rgba(214, 69, 69, 0);
+          }
+
+          100% {
+            box-shadow: 0 0 0 0 rgba(214, 69, 69, 0);
+          }
+        }
+
+        .voice-time {
+          font-size: 26px;
+          font-weight: 800;
+          letter-spacing: 0.04em;
+          margin-bottom: 10px;
+          color: #171827;
+        }
+
+        .voice-recorder strong {
+          font-size: 14px;
+        }
+
+        .voice-recorder small {
+          color: #8d8f9e;
+          font-size: 11px;
+          margin-top: 5px;
+        }
+
+        .voice-button {
+          margin-top: 18px;
+          border: 0;
+          background: #171827;
+          color: #fff;
+          border-radius: 11px;
+          padding: 12px 20px;
+          font-size: 12px;
+          font-weight: 800;
+          cursor: pointer;
+        }
+
+        .voice-button:hover {
+          opacity: 0.9;
+        }
+
+        .voice-button.stop {
+          background: #c93f3f;
+        }
+
+        .voice-player {
+          width: min(100%, 420px);
+          margin-top: 18px;
+        }
+
+        .voice-again {
+          margin-top: 12px;
+          border: 1px solid #dedee7;
+          background: #fff;
+          color: #55576a;
+          border-radius: 10px;
+          padding: 9px 14px;
+          font-size: 11px;
+          font-weight: 700;
+          cursor: pointer;
+        }
+
+        .voice-again:hover {
+          background: #f7f7fa;
+        }
+
+        .status {
+          margin-top: 14px;
+          padding: 11px 13px;
+          border-radius: 11px;
+          display: flex;
+          gap: 9px;
+          align-items: flex-start;
+          font-size: 12px;
           line-height: 1.5;
         }
 
-        .save-button {
-          display: inline-flex;
+        .status.success {
+          background: #edf9f3;
+          color: #207a58;
+        }
+
+        .status.error {
+          background: #fff2f2;
+          color: #ae3434;
+        }
+
+        .save-row {
+          display: flex;
+          justify-content: space-between;
           align-items: center;
-          gap: 8px;
-          flex: 0 0 auto;
-          padding: 11px 15px;
+          gap: 15px;
+          margin-top: 20px;
+          padding-top: 18px;
+          border-top: 1px solid #ededf2;
+        }
+
+        .save-row p {
+          font-size: 11px;
+          color: #9092a1;
+          margin: 0;
+        }
+
+        .save-row button {
           border: 0;
-          border-radius: 9px;
-          background: #17191e;
+          background: #171827;
           color: #fff;
-          font-family: inherit;
-          font-size: 10px;
-          font-weight: 750;
+          border-radius: 11px;
+          padding: 12px 18px;
+          font-size: 12px;
+          font-weight: 800;
           cursor: pointer;
-          transition: 0.15s ease;
         }
 
-        .save-button:hover {
-          background: #292c32;
-        }
-
-        .save-button:disabled {
+        .save-row button:disabled {
           opacity: 0.55;
-          cursor: wait;
+          cursor: not-allowed;
         }
 
-        /* ICONS */
-
-        svg {
-          width: 17px;
-          height: 17px;
-          display: block;
+        .capture-side {
+          padding: 25px;
+          position: relative;
+          overflow: hidden;
+          background: linear-gradient(
+            145deg,
+            #1a1a2a,
+            #202034
+          );
         }
 
-        /* MOBILE */
+        .capture-side:after {
+          content: "";
+          position: absolute;
+          width: 220px;
+          height: 220px;
+          border-radius: 50%;
+          right: -120px;
+          top: -90px;
+          background: rgba(
+            131,
+            115,
+            244,
+            0.13
+          );
+        }
 
-        @media (max-width: 700px) {
-          .capture-page {
-            padding: 23px 15px 50px;
-          }
+        .side-top {
+          display: flex;
+          gap: 8px;
+          align-items: center;
+          color: #a9a6bb;
+          font-size: 9px;
+          font-weight: 800;
+          letter-spacing: 0.15em;
+        }
 
-          .capture-header {
-            align-items: flex-start;
-            margin-bottom: 22px;
-          }
+        .spark {
+          color: #aaa0ff;
+          font-size: 14px;
+        }
 
-          .capture-header h1 {
-            font-size: 27px;
-          }
+        .capture-side h3 {
+          color: #fff;
+          font-size: 25px;
+          line-height: 1.12;
+          letter-spacing: -0.035em;
+          margin: 45px 0 13px;
+        }
 
-          .private-badge {
-            display: none;
-          }
+        .capture-side h3 em {
+          font-style: normal;
+          color: #aaa0ff;
+        }
 
-          .source-selector {
+        .capture-side > p {
+          color: #aaaaba;
+          font-size: 12px;
+          line-height: 1.6;
+          margin: 0;
+        }
+
+        .side-list {
+          margin-top: 31px;
+          display: grid;
+          gap: 19px;
+        }
+
+        .side-list > div {
+          display: flex;
+          gap: 12px;
+        }
+
+        .side-list b {
+          font-size: 10px;
+          color: #7f77bd;
+          padding-top: 2px;
+        }
+
+        .side-list span {
+          display: grid;
+          gap: 3px;
+        }
+
+        .side-list strong {
+          color: #eeeef4;
+          font-size: 11px;
+        }
+
+        .side-list small {
+          color: #9292a5;
+          font-size: 10px;
+          line-height: 1.45;
+        }
+
+        .privacy-note {
+          margin-top: 30px;
+          border: 1px solid rgba(
+            255,
+            255,
+            255,
+            0.08
+          );
+          background: rgba(
+            255,
+            255,
+            255,
+            0.035
+          );
+          border-radius: 12px;
+          padding: 11px;
+          display: flex;
+          gap: 9px;
+        }
+
+        .privacy-note > span {
+          color: #83d2ae;
+          font-size: 12px;
+        }
+
+        .privacy-note div {
+          display: grid;
+          gap: 3px;
+        }
+
+        .privacy-note strong {
+          color: #e8e8ef;
+          font-size: 10px;
+        }
+
+        .privacy-note small {
+          color: #88899a;
+          font-size: 9px;
+          line-height: 1.4;
+        }
+
+        @media (max-width: 900px) {
+          .capture-workspace {
             grid-template-columns: 1fr;
           }
 
-          .source {
-            min-height: 55px;
+          .capture-side {
+            min-height: 350px;
+          }
+        }
+
+        @media (max-width: 620px) {
+          .capture-page {
+            padding: 24px 15px 50px;
           }
 
-          .capture-card {
-            padding: 17px;
-            border-radius: 15px;
+          .capture-hero {
+            display: block;
           }
 
-          .dropzone {
-            min-height: 205px;
+          .capture-badge {
+            display: inline-block;
+            margin-top: 16px;
           }
 
-          .capture-footer {
-            align-items: stretch;
-            flex-direction: column;
+          .capture-hero h1 {
+            font-size: 34px;
           }
 
-          .save-button {
-            width: 100%;
-            justify-content: center;
+          .capture-main {
+            padding: 19px;
+          }
+
+          .capture-options {
+            grid-template-columns: 1fr;
+          }
+
+          .section-heading {
+            display: block;
+          }
+
+          .section-heading > p {
+            margin-top: 5px;
+          }
+
+          .form-grid {
+            grid-template-columns: 1fr;
+          }
+
+          .capture-side {
+            padding: 22px;
+          }
+
+          .voice-recorder {
+            padding: 22px;
           }
         }
       `}</style>
-    </AppShell>
-  );
-}
-
-/* ---------------- ICONS ---------------- */
-
-function UploadIcon() {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.7"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <path d="M12 16V4" />
-      <path d="m7 9 5-5 5 5" />
-      <path d="M5 20h14" />
-    </svg>
-  );
-}
-
-function LinkIcon() {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.7"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <path d="M10 13a5 5 0 0 0 7.07.07l2-2a5 5 0 0 0-7.07-7.07l-1.15 1.15" />
-      <path d="M14 11a5 5 0 0 0-7.07-.07l-2 2A5 5 0 0 0 7 20l1.15-1.15" />
-    </svg>
-  );
-}
-
-function TextIcon() {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.7"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <path d="M5 6h14" />
-      <path d="M12 6v13" />
-      <path d="M8 19h8" />
-    </svg>
-  );
-}
-
-function CheckIcon() {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <path d="m5 12 4 4L19 6" />
-    </svg>
-  );
-}
-
-function LockIcon() {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.7"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <rect x="5" y="10" width="14" height="10" rx="2" />
-      <path d="M8 10V7a4 4 0 0 1 8 0v3" />
-    </svg>
-  );
-}
-
-function ArrowIcon() {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.8"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <path d="M5 12h13" />
-      <path d="m13 6 6 6-6 6" />
-    </svg>
   );
 }

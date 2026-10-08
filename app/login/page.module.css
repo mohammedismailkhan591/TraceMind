@@ -1,0 +1,361 @@
+.page {
+  min-height: 100vh;
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 32px 20px;
+  background: #f6f6f3;
+  color: #18191c;
+}
+
+.backgroundShapeOne {
+  position: absolute;
+  width: 520px;
+  height: 520px;
+  top: -280px;
+  right: -180px;
+  border-radius: 50%;
+  background: #ecece8;
+  pointer-events: none;
+}
+
+.backgroundShapeTwo {
+  position: absolute;
+  width: 430px;
+  height: 430px;
+  bottom: -260px;
+  left: -170px;
+  border-radius: 50%;
+  background: #ededeb;
+  pointer-events: none;
+}
+
+.authCard {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  max-width: 430px;
+  padding: 42px 42px 30px;
+  background: rgba(255, 255, 255, 0.96);
+  border: 1px solid #e4e4e1;
+  border-radius: 16px;
+  box-shadow: 0 20px 60px rgba(25, 26, 29, 0.07);
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  margin-bottom: 34px;
+}
+
+.brandMark {
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9px;
+  background: #1d1e21;
+  color: #ffffff;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.brandName {
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: -0.2px;
+}
+
+.brandTagline {
+  margin-top: 3px;
+  color: #999b9f;
+  font-size: 9px;
+}
+
+.heading {
+  margin-bottom: 27px;
+}
+
+.heading h1 {
+  font-size: 27px;
+  line-height: 1.15;
+  letter-spacing: -0.8px;
+  font-weight: 650;
+}
+
+.heading p {
+  max-width: 330px;
+  margin-top: 9px;
+  color: #85878c;
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.errorBox {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  margin-bottom: 18px;
+  padding: 11px 12px;
+  border: 1px solid #ead5d5;
+  border-radius: 8px;
+  background: #fcf5f5;
+  color: #9b4a4a;
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.errorIcon {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: #b85c5c;
+  color: white;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.field label,
+.passwordLabel label {
+  color: #44464a;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.passwordLabel {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.passwordLabel a {
+  color: #777a80;
+  font-size: 10px;
+  text-decoration: none;
+}
+
+.passwordLabel a:hover {
+  color: #1d1e21;
+}
+
+.field input {
+  width: 100%;
+  height: 44px;
+  padding: 0 12px;
+  border: 1px solid #dedfdd;
+  border-radius: 8px;
+  outline: none;
+  background: #ffffff;
+  color: #202125;
+  font-size: 12px;
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+.field input::placeholder {
+  color: #b0b1b4;
+}
+
+.field input:focus {
+  border-color: #96989d;
+  box-shadow: 0 0 0 3px rgba(30, 31, 34, 0.05);
+}
+
+.field input:disabled {
+  background: #f7f7f5;
+  cursor: not-allowed;
+}
+
+.passwordWrapper {
+  position: relative;
+}
+
+.passwordWrapper input {
+  padding-right: 58px;
+}
+
+.showPassword {
+  position: absolute;
+  top: 50%;
+  right: 10px;
+  transform: translateY(-50%);
+  padding: 4px;
+  border: 0;
+  background: transparent;
+  color: #777a80;
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.showPassword:hover {
+  color: #1d1e21;
+}
+
+.primaryButton {
+  width: 100%;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 3px;
+  border: 0;
+  border-radius: 8px;
+  background: #1d1e21;
+  color: #ffffff;
+  font-size: 12px;
+  font-weight: 650;
+  transition:
+    background 0.15s ease,
+    transform 0.15s ease;
+}
+
+.primaryButton:hover:not(:disabled) {
+  background: #303136;
+}
+
+.primaryButton:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.primaryButton:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+
+.spinner {
+  width: 13px;
+  height: 13px;
+  border: 2px solid rgba(255, 255, 255, 0.35);
+  border-top-color: #ffffff;
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}
+
+.divider {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 23px 0 17px;
+}
+
+.divider span {
+  flex: 1;
+  height: 1px;
+  background: #e8e8e6;
+}
+
+.divider p {
+  color: #a0a1a4;
+  font-size: 9px;
+}
+
+.googleButton {
+  width: 100%;
+  height: 43px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  border: 1px solid #dedfdd;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #33353a;
+  font-size: 11px;
+  font-weight: 600;
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease;
+}
+
+.googleButton:hover:not(:disabled) {
+  background: #fafaf8;
+  border-color: #cfcfcd;
+}
+
+.googleButton:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.googleIcon {
+  width: 16px;
+  height: 16px;
+}
+
+.signupText {
+  margin-top: 23px;
+  text-align: center;
+  color: #8a8c91;
+  font-size: 10px;
+}
+
+.signupText a {
+  color: #292b2f;
+  font-weight: 650;
+  text-decoration: none;
+}
+
+.signupText a:hover {
+  text-decoration: underline;
+}
+
+.footer {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 7px;
+  margin-top: 27px;
+  color: #b0b1b3;
+  font-size: 8px;
+}
+
+.dot {
+  color: #d0d0ce;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (max-width: 520px) {
+  .page {
+    padding: 20px 14px;
+  }
+
+  .authCard {
+    padding: 32px 24px 25px;
+    border-radius: 13px;
+  }
+
+  .brand {
+    margin-bottom: 29px;
+  }
+
+  .heading h1 {
+    font-size: 24px;
+  }
+}

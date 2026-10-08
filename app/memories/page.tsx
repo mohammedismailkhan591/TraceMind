@@ -1,1488 +1,1797 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { createClient } from "../../lib/supabase";
 
 type Memory = {
   id: string;
+  user_id: string;
   title: string;
   summary: string | null;
+  content: string | null;
   category: string | null;
   source_type: string;
+  source_url: string | null;
   deadline: string | null;
   is_favorite: boolean;
+  metadata: Record<string, unknown> | null;
   created_at: string;
+  updated_at: string;
 };
 
-/* =========================
-   ICONS
-========================= */
+type FilterType =
+  | "all"
+  | "favorites"
+  | "deadlines"
+  | "recent";
 
-function DashboardIcon() {
-  return (
-    <svg viewBox="0 0 24 24">
-      <path d="M3 10.5L12 3l9 7.5" />
-      <path d="M5 9.5V21h14V9.5" />
-      <path d="M9 21v-6h6v6" />
-    </svg>
-  );
-}
+type SortType =
+  | "newest"
+  | "oldest"
+  | "az"
+  | "deadline";
 
-function CaptureIcon() {
-  return (
-    <svg viewBox="0 0 24 24">
-      <path d="M12 5v14" />
-      <path d="M5 12h14" />
-    </svg>
-  );
-}
+const supabase = createClient();
 
-function MemoriesIcon() {
-  return (
-    <svg viewBox="0 0 24 24">
-      <rect x="4" y="4" width="16" height="16" rx="2" />
-      <path d="M8 8h8" />
-      <path d="M8 12h8" />
-      <path d="M8 16h5" />
-    </svg>
-  );
-}
+const SOURCE_TYPES = [
+  "Screenshot",
+  "PDF",
+  "Link",
+  "Text",
+  "Voice",
+  "Image",
+  "Website",
+  "Other",
+];
 
-function TimelineIcon() {
-  return (
-    <svg viewBox="0 0 24 24">
-      <circle cx="12" cy="12" r="8" />
-      <path d="M12 7v5l3 2" />
-    </svg>
-  );
-}
+const CATEGORIES = [
+  "Tech",
+  "Hackathons",
+  "Scholarships",
+  "Jobs",
+  "Events",
+  "Messages",
+  "Non-Tech",
+  "Education",
+  "Finance",
+  "Other",
+];
 
-function ReminderIcon() {
-  return (
-    <svg viewBox="0 0 24 24">
-      <path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9" />
-      <path d="M10 21h4" />
-    </svg>
-  );
-}
+function formatDate(date: string | null) {
+  if (!date) return null;
 
-function ProfileIcon() {
-  return (
-    <svg viewBox="0 0 24 24">
-      <circle cx="12" cy="8" r="3.5" />
-      <path d="M5 21c.8-4 3.1-6 7-6s6.2 2 7 6" />
-    </svg>
-  );
-}
+  const value = new Date(date);
 
-function SearchIcon() {
-  return (
-    <svg viewBox="0 0 24 24">
-      <circle cx="11" cy="11" r="7" />
-      <path d="m20 20-4-4" />
-    </svg>
-  );
-}
+  if (Number.isNaN(value.getTime())) {
+    return null;
+  }
 
-function StarIcon({ filled }: { filled: boolean }) {
-  return (
-    <svg viewBox="0 0 24 24" className={filled ? "tm-star-filled" : ""}>
-      <path d="m12 3 2.8 5.7 6.2.9-4.5 4.4 1.1 6.2-5.6-3-5.6 3 1.1-6.2L3 9.6l6.2-.9L12 3Z" />
-    </svg>
-  );
-}
-
-/* =========================
-   HELPERS
-========================= */
-
-function formatDate(date: string) {
-  return new Date(date).toLocaleDateString("en-IN", {
-    day: "numeric",
+  return value.toLocaleDateString("en-IN", {
+    day: "2-digit",
     month: "short",
     year: "numeric",
   });
 }
 
-/* =========================
-   PAGE
-========================= */
+function formatRelativeDate(date: string) {
+  const value = new Date(date);
+
+  if (Number.isNaN(value.getTime())) {
+    return "";
+  }
+
+  const now = Date.now();
+  const diff = now - value.getTime();
+
+  const minute = 60 * 1000;
+  const hour = 60 * minute;
+  const day = 24 * hour;
+  const week = 7 * day;
+
+  if (diff < minute) return "Just now";
+  if (diff < hour) {
+    const n = Math.floor(diff / minute);
+    return `${n} min ago`;
+  }
+
+  if (diff < day) {
+    const n = Math.floor(diff / hour);
+    return `${n} hr ago`;
+  }
+
+  if (diff < week) {
+    const n = Math.floor(diff / day);
+    return `${n} day${n === 1 ? "" : "s"} ago`;
+  }
+
+  return formatDate(date) || "";
+}
+
+function getDeadlineStatus(deadline: string | null) {
+  if (!deadline) return null;
+
+  const date = new Date(deadline);
+
+  if (Number.isNaN(date.getTime())) {
+    return null;
+  }
+
+  const now = new Date();
+  const diff = date.getTime() - now.getTime();
+
+  if (diff < 0) {
+    return {
+      label: "Expired",
+      type: "expired",
+    };
+  }
+
+  const days = Math.ceil(diff / (1000 * 60 * 60 * 24));
+
+  if (days <= 1) {
+    return {
+      label: "Due today",
+      type: "urgent",
+    };
+  }
+
+  if (days <= 7) {
+    return {
+      label: `${days} days left`,
+      type: "soon",
+    };
+  }
+
+  return {
+    label: formatDate(deadline) || "Deadline",
+    type: "normal",
+  };
+}
+
+function getSourceLabel(source: string) {
+  if (!source) return "Memory";
+
+  const normalized = source.toLowerCase();
+
+  if (normalized.includes("screenshot")) return "Screenshot";
+  if (normalized.includes("pdf")) return "PDF";
+  if (normalized.includes("voice")) return "Voice";
+  if (normalized.includes("website")) return "Website";
+  if (normalized.includes("link") || normalized.includes("url")) {
+    return "Link";
+  }
+  if (normalized.includes("image")) return "Image";
+  if (normalized.includes("text")) return "Text";
+
+  return source;
+}
+
+function getInitials(title: string) {
+  const words = title
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+
+  if (!words.length) return "M";
+
+  if (words.length === 1) {
+    return words[0].slice(0, 1).toUpperCase();
+  }
+
+  return (
+    words[0].slice(0, 1) +
+    words[1].slice(0, 1)
+  ).toUpperCase();
+}
+
+function escapeSearch(value: string) {
+  return value
+    .replace(/[%_]/g, "\\$&")
+    .replace(/,/g, " ");
+}
 
 export default function MemoriesPage() {
-  const router = useRouter();
-  const supabase = createClient();
-
   const [memories, setMemories] = useState<Memory[]>([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+
   const [search, setSearch] = useState("");
-  const [selectedCategory, setSelectedCategory] = useState("All");
-  const [updatingFavorite, setUpdatingFavorite] = useState<string | null>(
-    null
+  const [category, setCategory] = useState("All");
+  const [source, setSource] = useState("All");
+  const [filter, setFilter] = useState<FilterType>("all");
+  const [sort, setSort] = useState<SortType>("newest");
+
+  const [error, setError] = useState("");
+  const [actionError, setActionError] = useState("");
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [favoriteId, setFavoriteId] = useState<string | null>(null);
+
+  const loadMemories = useCallback(
+    async (showRefresh = false) => {
+      try {
+        setError("");
+
+        if (showRefresh) {
+          setRefreshing(true);
+        } else {
+          setLoading(true);
+        }
+
+        const {
+          data: { user },
+          error: userError,
+        } = await supabase.auth.getUser();
+
+        if (userError) {
+          throw userError;
+        }
+
+        if (!user) {
+          setMemories([]);
+          setError("Please sign in to view your memories.");
+          return;
+        }
+
+        const { data, error: memoriesError } = await supabase
+          .from("memories")
+          .select(
+            `
+              id,
+              user_id,
+              title,
+              summary,
+              content,
+              category,
+              source_type,
+              source_url,
+              deadline,
+              is_favorite,
+              metadata,
+              created_at,
+              updated_at
+            `
+          )
+          .eq("user_id", user.id)
+          .order("created_at", {
+            ascending: false,
+          });
+
+        if (memoriesError) {
+          throw memoriesError;
+        }
+
+        setMemories((data as Memory[]) || []);
+      } catch (err) {
+        console.error("Memories load error:", err);
+
+        setError(
+          err instanceof Error
+            ? err.message
+            : "Unable to load your memories."
+        );
+      } finally {
+        setLoading(false);
+        setRefreshing(false);
+      }
+    },
+    []
   );
 
   useEffect(() => {
     loadMemories();
-  }, []);
+  }, [loadMemories]);
 
-  async function loadMemories() {
-    setLoading(true);
+  const stats = useMemo(() => {
+    const now = new Date();
 
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
+    const upcomingDeadlines = memories.filter((memory) => {
+      if (!memory.deadline) return false;
 
-    if (!user) {
-      router.push("/login");
-      return;
-    }
+      const deadline = new Date(memory.deadline);
 
-    const { data, error } = await supabase
-      .from("memories")
-      .select(
-        "id, title, summary, category, source_type, deadline, is_favorite, created_at"
-      )
-      .eq("user_id", user.id)
-      .order("created_at", { ascending: false });
-
-    if (error) {
-      console.error("Error loading memories:", error);
-      setMemories([]);
-    } else {
-      setMemories(data || []);
-    }
-
-    setLoading(false);
-  }
-
-  async function toggleFavorite(
-    event: React.MouseEvent,
-    memory: Memory
-  ) {
-    event.preventDefault();
-    event.stopPropagation();
-
-    if (updatingFavorite === memory.id) return;
-
-    setUpdatingFavorite(memory.id);
-
-    const newValue = !memory.is_favorite;
-
-    const { error } = await supabase
-      .from("memories")
-      .update({ is_favorite: newValue })
-      .eq("id", memory.id);
-
-    if (!error) {
-      setMemories((current) =>
-        current.map((item) =>
-          item.id === memory.id
-            ? { ...item, is_favorite: newValue }
-            : item
-        )
+      return (
+        !Number.isNaN(deadline.getTime()) &&
+        deadline.getTime() >= now.getTime()
       );
-    }
+    }).length;
 
-    setUpdatingFavorite(null);
-  }
-
-  const categories = useMemo(() => {
-    const values = memories
-      .map((memory) => memory.category)
-      .filter(Boolean) as string[];
-
-    return ["All", ...Array.from(new Set(values))];
+    return {
+      total: memories.length,
+      favorites: memories.filter(
+        (memory) => memory.is_favorite
+      ).length,
+      deadlines: upcomingDeadlines,
+    };
   }, [memories]);
 
   const filteredMemories = useMemo(() => {
+    let result = [...memories];
+
     const query = search.trim().toLowerCase();
 
-    return memories.filter((memory) => {
-      const matchesSearch =
-        !query ||
-        memory.title?.toLowerCase().includes(query) ||
-        memory.summary?.toLowerCase().includes(query) ||
-        memory.category?.toLowerCase().includes(query) ||
-        memory.source_type?.toLowerCase().includes(query);
+    if (query) {
+      result = result.filter((memory) => {
+        const searchable = [
+          memory.title,
+          memory.summary,
+          memory.content,
+          memory.category,
+          memory.source_type,
+          memory.source_url,
+        ]
+          .filter(Boolean)
+          .join(" ")
+          .toLowerCase();
 
-      const matchesCategory =
-        selectedCategory === "All" ||
-        memory.category === selectedCategory;
+        return searchable.includes(query);
+      });
+    }
 
-      return matchesSearch && matchesCategory;
+    if (category !== "All") {
+      result = result.filter(
+        (memory) =>
+          (memory.category || "Other").toLowerCase() ===
+          category.toLowerCase()
+      );
+    }
+
+    if (source !== "All") {
+      result = result.filter(
+        (memory) =>
+          getSourceLabel(memory.source_type).toLowerCase() ===
+          source.toLowerCase()
+      );
+    }
+
+    if (filter === "favorites") {
+      result = result.filter(
+        (memory) => memory.is_favorite
+      );
+    }
+
+    if (filter === "deadlines") {
+      result = result.filter((memory) => {
+        if (!memory.deadline) return false;
+
+        return new Date(memory.deadline).getTime() >= Date.now();
+      });
+    }
+
+    if (filter === "recent") {
+      const sevenDaysAgo =
+        Date.now() - 7 * 24 * 60 * 60 * 1000;
+
+      result = result.filter(
+        (memory) =>
+          new Date(memory.created_at).getTime() >=
+          sevenDaysAgo
+      );
+    }
+
+    result.sort((a, b) => {
+      if (sort === "newest") {
+        return (
+          new Date(b.created_at).getTime() -
+          new Date(a.created_at).getTime()
+        );
+      }
+
+      if (sort === "oldest") {
+        return (
+          new Date(a.created_at).getTime() -
+          new Date(b.created_at).getTime()
+        );
+      }
+
+      if (sort === "az") {
+        return a.title.localeCompare(b.title);
+      }
+
+      if (sort === "deadline") {
+        if (!a.deadline) return 1;
+        if (!b.deadline) return -1;
+
+        return (
+          new Date(a.deadline).getTime() -
+          new Date(b.deadline).getTime()
+        );
+      }
+
+      return 0;
     });
-  }, [memories, search, selectedCategory]);
 
-  const favoriteCount = memories.filter(
-    (memory) => memory.is_favorite
-  ).length;
+    return result;
+  }, [
+    memories,
+    search,
+    category,
+    source,
+    filter,
+    sort,
+  ]);
+
+  async function toggleFavorite(memory: Memory) {
+    try {
+      setFavoriteId(memory.id);
+      setActionError("");
+
+      const nextValue = !memory.is_favorite;
+
+      const { error } = await supabase
+        .from("memories")
+        .update({
+          is_favorite: nextValue,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", memory.id)
+        .eq("user_id", memory.user_id);
+
+      if (error) {
+        throw error;
+      }
+
+      setMemories((current) =>
+        current.map((item) =>
+          item.id === memory.id
+            ? {
+                ...item,
+                is_favorite: nextValue,
+              }
+            : item
+        )
+      );
+    } catch (err) {
+      console.error(err);
+
+      setActionError(
+        err instanceof Error
+          ? err.message
+          : "Could not update favorite."
+      );
+    } finally {
+      setFavoriteId(null);
+    }
+  }
+
+  async function deleteMemory(memory: Memory) {
+    const confirmed = window.confirm(
+      `Delete "${memory.title}"?\n\nThis action cannot be undone.`
+    );
+
+    if (!confirmed) return;
+
+    try {
+      setDeletingId(memory.id);
+      setActionError("");
+
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+
+      if (!user) {
+        throw new Error("Your session has expired. Please log in again.");
+      }
+
+      /*
+       * Delete assets belonging to this memory first.
+       * Database cascade handles related records such as reminders.
+       */
+      const { data: assets, error: assetsError } =
+        await supabase
+          .from("memory_assets")
+          .select("storage_path")
+          .eq("memory_id", memory.id)
+          .eq("user_id", user.id);
+
+      if (assetsError) {
+        console.warn(
+          "Could not read memory assets:",
+          assetsError
+        );
+      }
+
+      if (assets && assets.length > 0) {
+        const paths = assets
+          .map((asset) => asset.storage_path)
+          .filter(Boolean);
+
+        if (paths.length > 0) {
+          const { error: storageError } =
+            await supabase.storage
+              .from("memory-assets")
+              .remove(paths);
+
+          if (storageError) {
+            console.warn(
+              "Storage cleanup warning:",
+              storageError
+            );
+          }
+        }
+      }
+
+      const { error: assetsDeleteError } =
+        await supabase
+          .from("memory_assets")
+          .delete()
+          .eq("memory_id", memory.id)
+          .eq("user_id", user.id);
+
+      if (assetsDeleteError) {
+        console.warn(
+          "Asset database cleanup warning:",
+          assetsDeleteError
+        );
+      }
+
+      const { error: memoryError } = await supabase
+        .from("memories")
+        .delete()
+        .eq("id", memory.id)
+        .eq("user_id", user.id);
+
+      if (memoryError) {
+        throw memoryError;
+      }
+
+      setMemories((current) =>
+        current.filter((item) => item.id !== memory.id)
+      );
+    } catch (err) {
+      console.error("Delete memory error:", err);
+
+      setActionError(
+        err instanceof Error
+          ? err.message
+          : "Could not delete this memory."
+      );
+    } finally {
+      setDeletingId(null);
+    }
+  }
+
+  function clearFilters() {
+    setSearch("");
+    setCategory("All");
+    setSource("All");
+    setFilter("all");
+    setSort("newest");
+  }
 
   return (
-    <div className="tm-page">
-
-      {/* =========================
-          SIDEBAR
-      ========================= */}
-
-      <aside className="tm-sidebar">
-
-        <div className="tm-brand">
-          <div className="tm-brand-mark">T</div>
-          <span>TraceMind</span>
-        </div>
-
-        <nav className="tm-navigation">
-
-          <Link href="/dashboard" className="tm-navigation-item">
-            <span className="tm-icon">
-              <DashboardIcon />
-            </span>
-            <span className="tm-label">Dashboard</span>
-          </Link>
-
-          <Link href="/capture" className="tm-navigation-item">
-            <span className="tm-icon">
-              <CaptureIcon />
-            </span>
-            <span className="tm-label">Capture</span>
-          </Link>
-
-          <Link
-            href="/memories"
-            className="tm-navigation-item tm-navigation-active"
-          >
-            <span className="tm-icon">
-              <MemoriesIcon />
-            </span>
-            <span className="tm-label">Memories</span>
-          </Link>
-
-          <Link href="/timeline" className="tm-navigation-item">
-            <span className="tm-icon">
-              <TimelineIcon />
-            </span>
-            <span className="tm-label">Timeline</span>
-          </Link>
-
-          <Link href="/reminders" className="tm-navigation-item">
-            <span className="tm-icon">
-              <ReminderIcon />
-            </span>
-            <span className="tm-label">Reminders</span>
-          </Link>
-
-        </nav>
-
-        <div className="tm-profile-navigation">
-
-          <Link href="/profile" className="tm-navigation-item">
-            <span className="tm-icon">
-              <ProfileIcon />
-            </span>
-            <span className="tm-label">Profile</span>
-          </Link>
-
-        </div>
-
-      </aside>
-
-      {/* =========================
-          MAIN CONTENT
-      ========================= */}
-
-      <main className="tm-main">
-
-        <div className="tm-content">
+      <main className="memories-page">
+        <div className="memories-container">
 
           {/* HEADER */}
-
-          <header className="tm-header">
-
+          <header className="memories-header">
             <div>
-              <p className="tm-eyebrow">
-                YOUR INFORMATION
-              </p>
+              <div className="eyebrow">
+                YOUR PERSONAL LIBRARY
+              </div>
 
               <h1>Memories</h1>
 
-              <p className="tm-subtitle">
-                Everything you&apos;ve saved, organized in one place.
+              <p>
+                Everything you saved, organized in one place.
               </p>
             </div>
 
-            <Link href="/capture" className="tm-capture-button">
+            <Link
+              href="/capture"
+              className="add-memory-button"
+            >
               <span>+</span>
-              Capture
+              Add memory
             </Link>
-
           </header>
 
           {/* SEARCH */}
-
-          <div className="tm-search">
-
-            <SearchIcon />
+          <section className="memory-search">
+            <div className="search-symbol">⌕</div>
 
             <input
-              type="text"
-              placeholder="Search your memories..."
               value={search}
               onChange={(event) =>
                 setSearch(event.target.value)
               }
+              placeholder="Search anything you remember..."
+              aria-label="Search memories"
             />
 
             {search && (
               <button
                 type="button"
-                className="tm-clear"
+                className="clear-search"
                 onClick={() => setSearch("")}
+                aria-label="Clear search"
               >
                 ×
               </button>
             )}
 
-          </div>
+            <div className="search-hint">
+              {filteredMemories.length} result
+              {filteredMemories.length === 1 ? "" : "s"}
+            </div>
+          </section>
 
-          {/* FILTERS */}
+          {/* STATS */}
+          <section className="memory-stats">
+            <div className="stat-card">
+              <div className="stat-number">
+                {stats.total}
+              </div>
 
-          <div className="tm-filters">
+              <div>
+                <div className="stat-title">
+                  Memories
+                </div>
 
-            {categories.map((category) => (
+                <div className="stat-subtitle">
+                  Saved information
+                </div>
+              </div>
+            </div>
+
+            <div className="stat-card">
+              <div className="stat-number">
+                {stats.favorites}
+              </div>
+
+              <div>
+                <div className="stat-title">
+                  Favorites
+                </div>
+
+                <div className="stat-subtitle">
+                  Important memories
+                </div>
+              </div>
+            </div>
+
+            <div className="stat-card">
+              <div className="stat-number">
+                {stats.deadlines}
+              </div>
+
+              <div>
+                <div className="stat-title">
+                  Deadlines
+                </div>
+
+                <div className="stat-subtitle">
+                  Upcoming dates
+                </div>
+              </div>
+            </div>
+          </section>
+
+          {/* FILTER BAR */}
+          <section className="filter-section">
+
+            <div className="filter-tabs">
               <button
-                key={category}
-                type="button"
                 className={
-                  selectedCategory === category
-                    ? "tm-filter tm-filter-active"
-                    : "tm-filter"
+                  filter === "all"
+                    ? "filter-tab active"
+                    : "filter-tab"
+                }
+                onClick={() => setFilter("all")}
+              >
+                All
+              </button>
+
+              <button
+                className={
+                  filter === "recent"
+                    ? "filter-tab active"
+                    : "filter-tab"
+                }
+                onClick={() => setFilter("recent")}
+              >
+                Recent
+              </button>
+
+              <button
+                className={
+                  filter === "favorites"
+                    ? "filter-tab active"
+                    : "filter-tab"
                 }
                 onClick={() =>
-                  setSelectedCategory(category)
+                  setFilter("favorites")
                 }
               >
-                {category}
+                Favorites
               </button>
-            ))}
 
-          </div>
+              <button
+                className={
+                  filter === "deadlines"
+                    ? "filter-tab active"
+                    : "filter-tab"
+                }
+                onClick={() =>
+                  setFilter("deadlines")
+                }
+              >
+                Deadlines
+              </button>
+            </div>
 
-          {/* SUMMARY */}
+            <div className="filter-controls">
+              <select
+                value={category}
+                onChange={(event) =>
+                  setCategory(event.target.value)
+                }
+                aria-label="Filter by category"
+              >
+                <option value="All">
+                  All categories
+                </option>
 
-          <div className="tm-summary">
+                {CATEGORIES.map((item) => (
+                  <option key={item} value={item}>
+                    {item}
+                  </option>
+                ))}
+              </select>
 
-            <span>
+              <select
+                value={source}
+                onChange={(event) =>
+                  setSource(event.target.value)
+                }
+                aria-label="Filter by source"
+              >
+                <option value="All">
+                  All sources
+                </option>
+
+                {SOURCE_TYPES.map((item) => (
+                  <option key={item} value={item}>
+                    {item}
+                  </option>
+                ))}
+              </select>
+
+              <select
+                value={sort}
+                onChange={(event) =>
+                  setSort(event.target.value as SortType)
+                }
+                aria-label="Sort memories"
+              >
+                <option value="newest">
+                  Newest
+                </option>
+
+                <option value="oldest">
+                  Oldest
+                </option>
+
+                <option value="az">
+                  A–Z
+                </option>
+
+                <option value="deadline">
+                  Deadline
+                </option>
+              </select>
+
+              {(search ||
+                category !== "All" ||
+                source !== "All" ||
+                filter !== "all" ||
+                sort !== "newest") && (
+                <button
+                  className="reset-button"
+                  onClick={clearFilters}
+                >
+                  Reset
+                </button>
+              )}
+            </div>
+          </section>
+
+          {/* ERROR */}
+          {error && (
+            <div className="error-box">
+              <div>
+                <strong>Something went wrong</strong>
+                <span>{error}</span>
+              </div>
+
+              <button
+                onClick={() => loadMemories(true)}
+              >
+                Try again
+              </button>
+            </div>
+          )}
+
+          {actionError && (
+            <div className="action-error">
+              {actionError}
+              <button
+                onClick={() => setActionError("")}
+              >
+                ×
+              </button>
+            </div>
+          )}
+
+          {/* RESULT HEADER */}
+          <div className="results-header">
+            <div>
               <strong>
                 {filteredMemories.length}
               </strong>{" "}
               {filteredMemories.length === 1
                 ? "memory"
                 : "memories"}
-            </span>
+            </div>
 
-            <span>
-              {favoriteCount} favorites
-            </span>
-
+            <button
+              className="refresh-button"
+              onClick={() => loadMemories(true)}
+              disabled={refreshing}
+            >
+              {refreshing
+                ? "Refreshing..."
+                : "Refresh"}
+            </button>
           </div>
 
           {/* LOADING */}
-
           {loading && (
-            <div className="tm-loading">
+            <div className="memory-grid">
+              {Array.from({ length: 6 }).map(
+                (_, index) => (
+                  <div
+                    className="memory-skeleton"
+                    key={index}
+                  >
+                    <div className="skeleton-line small" />
+                    <div className="skeleton-line title" />
+                    <div className="skeleton-line" />
+                    <div className="skeleton-line short" />
 
-              <div className="tm-spinner" />
-
-              <p>Loading your memories...</p>
-
+                    <div className="skeleton-footer" />
+                  </div>
+                )
+              )}
             </div>
           )}
 
           {/* EMPTY */}
-
           {!loading &&
+            !error &&
             filteredMemories.length === 0 && (
-              <div className="tm-empty">
-
-                <div className="tm-empty-icon">
-                  <MemoriesIcon />
+              <section className="empty-state">
+                <div className="empty-mark">
+                  TM
                 </div>
 
                 <h2>
-                  {search ||
-                  selectedCategory !== "All"
-                    ? "No memories found"
-                    : "No memories yet"}
+                  {memories.length === 0
+                    ? "Your memory library is empty"
+                    : "No memories found"}
                 </h2>
 
                 <p>
-                  {search ||
-                  selectedCategory !== "All"
-                    ? "Try a different search or category."
-                    : "Capture something you want TraceMind to remember."}
+                  {memories.length === 0
+                    ? "Save your first screenshot, PDF, link, voice note, or text and TraceMind will keep it organized."
+                    : "Try a different search or remove one of your filters."}
                 </p>
 
-                {!search &&
-                  selectedCategory === "All" && (
-                    <Link
-                      href="/capture"
-                      className="tm-empty-button"
-                    >
-                      Capture your first memory
-                    </Link>
-                  )}
-
-              </div>
+                {memories.length === 0 ? (
+                  <Link
+                    href="/capture"
+                    className="empty-button"
+                  >
+                    Capture your first memory
+                  </Link>
+                ) : (
+                  <button
+                    className="empty-button"
+                    onClick={clearFilters}
+                  >
+                    Clear filters
+                  </button>
+                )}
+              </section>
             )}
 
-          {/* MEMORY CARDS */}
-
+          {/* MEMORY GRID */}
           {!loading &&
             filteredMemories.length > 0 && (
-              <div className="tm-memory-grid">
+              <section className="memory-grid">
+                {filteredMemories.map((memory) => {
+                  const deadline = getDeadlineStatus(
+                    memory.deadline
+                  );
 
-                {filteredMemories.map((memory) => (
+                  const source = getSourceLabel(
+                    memory.source_type
+                  );
 
-                  <Link
-                    href={`/memories/${memory.id}`}
-                    key={memory.id}
-                    className="tm-memory-card"
-                  >
-
-                    <div className="tm-card-top">
-
-                      <span className="tm-memory-type">
-                        {memory.category ||
-                          memory.source_type ||
-                          "Other"}
-                      </span>
-
-                      <button
-                        type="button"
-                        className={
-                          memory.is_favorite
-                            ? "tm-favorite tm-favorite-active"
-                            : "tm-favorite"
-                        }
-                        onClick={(event) =>
-                          toggleFavorite(
-                            event,
-                            memory
-                          )
-                        }
-                        disabled={
-                          updatingFavorite ===
-                          memory.id
-                        }
-                      >
-                        <StarIcon
-                          filled={
-                            memory.is_favorite
-                          }
-                        />
-                      </button>
-
-                    </div>
-
-                    <div className="tm-card-body">
-
-                      <h2>
-                        {memory.title ||
-                          "Untitled memory"}
-                      </h2>
-
-                      {memory.summary ? (
-                        <p>{memory.summary}</p>
-                      ) : (
-                        <p className="tm-no-summary">
-                          No summary available.
-                        </p>
-                      )}
-
-                    </div>
-
-                    <div className="tm-card-bottom">
-
-                      <div>
-                        <span className="tm-meta-label">
-                          SAVED
+                  return (
+                    <article
+                      className="memory-card"
+                      key={memory.id}
+                    >
+                      <div className="card-top">
+                        <span className="source-label">
+                          {source}
                         </span>
 
-                        <strong className="tm-meta-value">
-                          {formatDate(
-                            memory.created_at
-                          )}
-                        </strong>
+                        <button
+                          className={
+                            memory.is_favorite
+                              ? "favorite-button active"
+                              : "favorite-button"
+                          }
+                          onClick={() =>
+                            toggleFavorite(memory)
+                          }
+                          disabled={
+                            favoriteId === memory.id
+                          }
+                          aria-label={
+                            memory.is_favorite
+                              ? "Remove from favorites"
+                              : "Add to favorites"
+                          }
+                        >
+                          {memory.is_favorite
+                            ? "★"
+                            : "☆"}
+                        </button>
                       </div>
 
-                      {memory.deadline && (
-                        <div className="tm-deadline">
-
-                          <span className="tm-meta-label">
-                            DEADLINE
-                          </span>
-
-                          <strong className="tm-meta-value">
-                            {formatDate(
-                              memory.deadline
-                            )}
-                          </strong>
-
+                      <Link
+                        href={`/memories/${memory.id}`}
+                        className="memory-card-main"
+                      >
+                        <div className="memory-avatar">
+                          {getInitials(memory.title)}
                         </div>
-                      )}
 
-                    </div>
+                        <div className="memory-card-content">
+                          <h2>
+                            {memory.title ||
+                              "Untitled memory"}
+                          </h2>
 
-                  </Link>
+                          <p>
+                            {memory.summary ||
+                              memory.content ||
+                              "No description available for this memory."}
+                          </p>
+                        </div>
+                      </Link>
 
-                ))}
+                      <div className="memory-meta">
+                        {memory.category && (
+                          <span className="category-label">
+                            {memory.category}
+                          </span>
+                        )}
 
-              </div>
+                        {deadline && (
+                          <span
+                            className={`deadline-label ${deadline.type}`}
+                          >
+                            {deadline.label}
+                          </span>
+                        )}
+                      </div>
+
+                      <div className="card-bottom">
+                        <span>
+                          Saved{" "}
+                          {formatRelativeDate(
+                            memory.created_at
+                          )}
+                        </span>
+
+                        <div className="card-actions">
+                          <Link
+                            href={`/memories/${memory.id}`}
+                            className="view-link"
+                          >
+                            View memory
+                            <span>→</span>
+                          </Link>
+
+                          <button
+                            className="delete-button"
+                            onClick={() =>
+                              deleteMemory(memory)
+                            }
+                            disabled={
+                              deletingId === memory.id
+                            }
+                          >
+                            {deletingId === memory.id
+                              ? "Deleting..."
+                              : "Delete"}
+                          </button>
+                        </div>
+                      </div>
+                    </article>
+                  );
+                })}
+              </section>
             )}
-
         </div>
-
       </main>
 
-      {/* =========================
-          STYLES
-      ========================= */}
-
-      <style jsx>{`
-
-        /* =================================
-           PAGE
-        ================================= */
-
-        .tm-page {
-          min-height: 100vh;
-          background: #fafafa;
-          color: #171717;
+      <style jsx global>{`
+        :root {
+          --tm-bg: #f7f9fc;
+          --tm-surface: #ffffff;
+          --tm-text: #172033;
+          --tm-muted: #718096;
+          --tm-soft: #f1f4f8;
+          --tm-line: #e5e9ef;
+          --tm-blue: #2563eb;
+          --tm-blue-soft: #eff6ff;
+          --tm-danger: #dc2626;
+          --tm-success: #15803d;
+          --tm-warning: #b45309;
         }
 
-        /* =================================
-           SIDEBAR
-        ================================= */
-
-        .tm-sidebar {
-          position: fixed;
-          top: 0;
-          left: 0;
-          bottom: 0;
-
-          width: 210px;
-
-          padding: 26px 14px;
-
-          background: #ffffff;
-
-          border-right: 1px solid #e7e7e7;
-
-          display: flex;
-          flex-direction: column;
-
-          z-index: 9999;
-
+        * {
           box-sizing: border-box;
         }
 
-        .tm-brand {
-          display: flex;
-          align-items: center;
-
-          gap: 10px;
-
-          padding: 0 10px;
-
-          margin-bottom: 34px;
-
-          color: #171717;
-
-          font-size: 18px;
-          font-weight: 700;
-
-          white-space: nowrap;
-        }
-
-        .tm-brand-mark {
-          width: 34px;
-          height: 34px;
-
-          flex: 0 0 34px;
-
-          display: flex;
-          align-items: center;
-          justify-content: center;
-
-          border-radius: 9px;
-
-          background: #171717;
-          color: #ffffff;
-
-          font-size: 16px;
-          font-weight: 700;
-        }
-
-        .tm-navigation {
-          width: 100%;
-
-          display: flex;
-          flex-direction: column;
-
-          gap: 5px;
-        }
-
-        .tm-navigation-item {
-          width: 100%;
-          height: 45px;
-
-          box-sizing: border-box;
-
-          padding: 0 12px;
-
-          display: flex;
-          align-items: center;
-
-          gap: 12px;
-
-          border-radius: 9px;
-
-          background: transparent;
-
-          color: #666666;
-
-          text-decoration: none;
-
-          font-size: 14px;
-          font-weight: 500;
-
-          line-height: 1;
-
-          white-space: nowrap;
-
-          transition:
-            background 0.15s ease,
-            color 0.15s ease;
-        }
-
-        .tm-navigation-item:hover {
-          background: #f5f5f5;
-          color: #171717;
-        }
-
-        .tm-navigation-active {
-          background: #eeeeee;
-          color: #171717;
-          font-weight: 650;
-        }
-
-        .tm-icon {
-          width: 20px;
-          height: 20px;
-
-          min-width: 20px;
-          min-height: 20px;
-
-          max-width: 20px;
-          max-height: 20px;
-
-          flex: 0 0 20px;
-
-          display: flex;
-          align-items: center;
-          justify-content: center;
-
-          overflow: hidden;
-        }
-
-        .tm-icon svg {
-          width: 20px !important;
-          height: 20px !important;
-
-          min-width: 20px !important;
-          min-height: 20px !important;
-
-          max-width: 20px !important;
-          max-height: 20px !important;
-
-          display: block !important;
-
-          fill: none !important;
-
-          stroke: currentColor !important;
-
-          stroke-width: 1.8 !important;
-        }
-
-        .tm-label {
-          display: block;
-
-          font-size: 14px;
-
-          line-height: 1;
-
-          white-space: nowrap;
-        }
-
-        .tm-profile-navigation {
-          width: 100%;
-
-          margin-top: auto;
-
-          padding-top: 16px;
-
-          border-top: 1px solid #eeeeee;
-        }
-
-        /* =================================
-           MAIN
-        ================================= */
-
-        .tm-main {
+        .memories-page {
           min-height: 100vh;
-
-          margin-left: 210px;
+          background: var(--tm-bg);
+          color: var(--tm-text);
+          padding: 42px 42px 70px;
         }
 
-        .tm-content {
-          width: min(
-            1180px,
-            calc(100% - 64px)
-          );
-
+        .memories-container {
+          width: min(1180px, 100%);
           margin: 0 auto;
-
-          padding: 52px 0 70px;
         }
 
-        /* =================================
-           HEADER
-        ================================= */
+        /* HEADER */
 
-        .tm-header {
+        .memories-header {
           display: flex;
-
           align-items: flex-end;
-
           justify-content: space-between;
-
-          gap: 30px;
-
+          gap: 24px;
           margin-bottom: 30px;
         }
 
-        .tm-eyebrow {
-          margin: 0 0 8px;
-
-          color: #8a8a8a;
-
+        .eyebrow {
+          color: var(--tm-blue);
           font-size: 11px;
-          font-weight: 700;
-
+          font-weight: 800;
           letter-spacing: 0.14em;
+          margin-bottom: 9px;
         }
 
-        .tm-header h1 {
+        .memories-header h1 {
           margin: 0;
-
-          color: #171717;
-
-          font-size: 36px;
-
-          line-height: 1.1;
-
+          font-size: clamp(30px, 4vw, 42px);
+          line-height: 1.05;
           letter-spacing: -0.035em;
-
-          font-weight: 700;
+          font-weight: 760;
         }
 
-        .tm-subtitle {
+        .memories-header p {
           margin: 10px 0 0;
-
-          color: #777777;
-
+          color: var(--tm-muted);
           font-size: 15px;
         }
 
-        .tm-capture-button {
-          height: 44px;
-
-          padding: 0 18px;
-
+        .add-memory-button {
           display: inline-flex;
+          align-items: center;
+          gap: 9px;
+          height: 44px;
+          padding: 0 18px;
+          border-radius: 11px;
+          background: var(--tm-text);
+          color: white;
+          text-decoration: none;
+          font-size: 14px;
+          font-weight: 700;
+          transition:
+            transform 0.2s ease,
+            box-shadow 0.2s ease;
+        }
 
+        .add-memory-button:hover {
+          transform: translateY(-1px);
+          box-shadow: 0 9px 25px rgba(15, 23, 42, 0.15);
+        }
+
+        .add-memory-button span {
+          font-size: 19px;
+          font-weight: 400;
+          line-height: 1;
+        }
+
+        /* SEARCH */
+
+        .memory-search {
+          height: 66px;
+          background: var(--tm-surface);
+          border: 1px solid var(--tm-line);
+          border-radius: 16px;
+          display: flex;
+          align-items: center;
+          padding: 0 17px;
+          box-shadow:
+            0 8px 30px rgba(15, 23, 42, 0.035);
+          margin-bottom: 20px;
+        }
+
+        .search-symbol {
+          width: 34px;
+          color: #8a94a6;
+          font-size: 28px;
+          font-family: Arial, sans-serif;
+          transform: rotate(-10deg);
+          display: flex;
           align-items: center;
           justify-content: center;
-
-          gap: 9px;
-
-          border-radius: 9px;
-
-          background: #171717;
-
-          color: #ffffff;
-
-          text-decoration: none;
-
-          font-size: 14px;
-          font-weight: 600;
         }
 
-        .tm-capture-button:hover {
-          background: #303030;
+        .memory-search input {
+          flex: 1;
+          min-width: 0;
+          height: 100%;
+          border: 0;
+          outline: 0;
+          background: transparent;
+          font-size: 16px;
+          color: var(--tm-text);
+          padding: 0 8px;
         }
 
-        .tm-capture-button span {
-          font-size: 20px;
-          line-height: 1;
+        .memory-search input::placeholder {
+          color: #9aa4b2;
         }
 
-        /* =================================
-           SEARCH
-        ================================= */
+        .clear-search {
+          width: 30px;
+          height: 30px;
+          border: 0;
+          border-radius: 50%;
+          background: var(--tm-soft);
+          color: #697386;
+          cursor: pointer;
+          font-size: 18px;
+        }
 
-        .tm-search {
-          width: 100%;
-          height: 52px;
+        .search-hint {
+          color: #9aa4b2;
+          font-size: 12px;
+          white-space: nowrap;
+          margin-left: 10px;
+        }
 
-          margin-bottom: 18px;
+        /* STATS */
 
-          padding: 0 16px;
+        .memory-stats {
+          display: grid;
+          grid-template-columns: repeat(3, 1fr);
+          gap: 14px;
+          margin-bottom: 28px;
+        }
 
+        .stat-card {
+          background: var(--tm-surface);
+          border: 1px solid var(--tm-line);
+          border-radius: 14px;
+          min-height: 86px;
           display: flex;
           align-items: center;
-
-          gap: 12px;
-
-          background: #ffffff;
-
-          border: 1px solid #e4e4e4;
-
-          border-radius: 11px;
-
-          box-sizing: border-box;
+          gap: 15px;
+          padding: 17px 20px;
         }
 
-        .tm-search > svg {
-          width: 19px;
-          height: 19px;
-
-          flex: 0 0 19px;
-
-          fill: none;
-
-          stroke: #8b8b8b;
-
-          stroke-width: 1.8;
+        .stat-number {
+          font-size: 26px;
+          font-weight: 760;
+          letter-spacing: -0.04em;
         }
 
-        .tm-search input {
-          width: 100%;
-          height: 100%;
-
-          padding: 0;
-
-          border: none;
-
-          outline: none;
-
-          background: transparent;
-
-          color: #171717;
-
-          font-size: 14px;
+        .stat-title {
+          font-size: 13px;
+          font-weight: 700;
         }
 
-        .tm-search input::placeholder {
-          color: #a1a1a1;
+        .stat-subtitle {
+          margin-top: 3px;
+          color: var(--tm-muted);
+          font-size: 11px;
         }
 
-        .tm-clear {
-          border: none;
+        /* FILTERS */
 
-          background: transparent;
-
-          color: #888888;
-
-          cursor: pointer;
-
-          font-size: 22px;
-
-          line-height: 1;
-        }
-
-        /* =================================
-           FILTERS
-        ================================= */
-
-        .tm-filters {
+        .filter-section {
           display: flex;
-
-          flex-wrap: wrap;
-
-          gap: 8px;
-
-          margin-bottom: 22px;
-        }
-
-        .tm-filter {
-          height: 34px;
-
-          padding: 0 13px;
-
-          border: 1px solid #e2e2e2;
-
-          border-radius: 7px;
-
-          background: #ffffff;
-
-          color: #707070;
-
-          font-size: 12px;
-
-          font-weight: 600;
-
-          cursor: pointer;
-        }
-
-        .tm-filter-active {
-          background: #171717;
-
-          border-color: #171717;
-
-          color: #ffffff;
-        }
-
-        /* =================================
-           SUMMARY
-        ================================= */
-
-        .tm-summary {
-          display: flex;
-
           align-items: center;
           justify-content: space-between;
+          gap: 20px;
+          border-bottom: 1px solid var(--tm-line);
+          margin-bottom: 21px;
+          padding-bottom: 13px;
+        }
 
-          padding: 0 2px 14px;
+        .filter-tabs {
+          display: flex;
+          gap: 5px;
+          flex-wrap: wrap;
+        }
 
-          color: #777777;
+        .filter-tab {
+          border: 0;
+          background: transparent;
+          color: #778195;
+          padding: 8px 12px;
+          border-radius: 8px;
+          font-size: 13px;
+          font-weight: 650;
+          cursor: pointer;
+          transition: 0.18s ease;
+        }
 
+        .filter-tab:hover {
+          color: var(--tm-text);
+          background: var(--tm-soft);
+        }
+
+        .filter-tab.active {
+          color: var(--tm-blue);
+          background: var(--tm-blue-soft);
+        }
+
+        .filter-controls {
+          display: flex;
+          align-items: center;
+          gap: 7px;
+          flex-wrap: wrap;
+          justify-content: flex-end;
+        }
+
+        .filter-controls select {
+          height: 35px;
+          padding: 0 28px 0 10px;
+          border: 1px solid var(--tm-line);
+          border-radius: 8px;
+          background: white;
+          color: #4a5568;
+          font-size: 12px;
+          outline: none;
+          cursor: pointer;
+        }
+
+        .filter-controls select:focus {
+          border-color: #a9c5f7;
+          box-shadow: 0 0 0 3px #eff6ff;
+        }
+
+        .reset-button {
+          height: 35px;
+          border: 0;
+          background: transparent;
+          color: var(--tm-blue);
+          font-size: 12px;
+          font-weight: 700;
+          cursor: pointer;
+        }
+
+        /* RESULTS */
+
+        .results-header {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          margin-bottom: 14px;
+          color: var(--tm-muted);
           font-size: 13px;
         }
 
-        .tm-summary strong {
-          color: #171717;
-          font-weight: 700;
+        .results-header strong {
+          color: var(--tm-text);
         }
 
-        /* =================================
-           MEMORY GRID
-        ================================= */
+        .refresh-button {
+          border: 0;
+          background: transparent;
+          color: var(--tm-blue);
+          font-size: 12px;
+          font-weight: 700;
+          cursor: pointer;
+        }
 
-        .tm-memory-grid {
+        .refresh-button:disabled {
+          opacity: 0.5;
+          cursor: default;
+        }
+
+        /* GRID */
+
+        .memory-grid {
           display: grid;
-
-          grid-template-columns:
-            repeat(2, minmax(0, 1fr));
-
-          gap: 16px;
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+          gap: 15px;
         }
 
-        .tm-memory-card {
+        .memory-card {
+          background: var(--tm-surface);
+          border: 1px solid var(--tm-line);
+          border-radius: 15px;
+          padding: 17px;
           min-width: 0;
-
-          min-height: 245px;
-
-          padding: 20px;
-
-          display: flex;
-          flex-direction: column;
-
-          background: #ffffff;
-
-          border: 1px solid #e5e5e5;
-
-          border-radius: 13px;
-
-          color: inherit;
-
-          text-decoration: none;
-
-          box-sizing: border-box;
-
           transition:
-            border-color 0.18s ease,
-            box-shadow 0.18s ease,
-            transform 0.18s ease;
+            transform 0.2s ease,
+            box-shadow 0.2s ease,
+            border-color 0.2s ease;
         }
 
-        .tm-memory-card:hover {
-          border-color: #d4d4d4;
-
-          box-shadow:
-            0 8px 24px
-            rgba(0, 0, 0, 0.05);
-
+        .memory-card:hover {
           transform: translateY(-2px);
+          border-color: #d5dce6;
+          box-shadow:
+            0 14px 35px rgba(15, 23, 42, 0.07);
         }
 
-        .tm-card-top {
+        .card-top {
           display: flex;
-
           align-items: center;
-
           justify-content: space-between;
-
-          gap: 12px;
+          margin-bottom: 14px;
         }
 
-        .tm-memory-type {
-          min-height: 26px;
-
-          padding: 0 9px;
-
+        .source-label {
           display: inline-flex;
-
           align-items: center;
-
+          height: 24px;
+          padding: 0 9px;
           border-radius: 6px;
-
-          background: #f5f5f5;
-
-          color: #686868;
-
+          background: #f4f6f9;
+          color: #667085;
           font-size: 10px;
-
-          font-weight: 700;
-
-          letter-spacing: 0.06em;
-
+          font-weight: 750;
+          letter-spacing: 0.04em;
           text-transform: uppercase;
         }
 
-        .tm-favorite {
-          width: 34px;
-          height: 34px;
+        .favorite-button {
+          width: 29px;
+          height: 29px;
+          border: 0;
+          border-radius: 8px;
+          background: transparent;
+          color: #a0a8b5;
+          font-size: 18px;
+          line-height: 1;
+          cursor: pointer;
+          transition: 0.18s ease;
+        }
 
-          padding: 0;
+        .favorite-button:hover {
+          background: #f7f8fa;
+          color: #6b7280;
+        }
 
+        .favorite-button.active {
+          color: #e19a21;
+        }
+
+        .favorite-button:disabled {
+          opacity: 0.5;
+        }
+
+        .memory-card-main {
           display: flex;
+          align-items: flex-start;
+          gap: 13px;
+          text-decoration: none;
+          color: inherit;
+          margin-bottom: 15px;
+        }
 
+        .memory-avatar {
+          width: 39px;
+          height: 39px;
+          flex: 0 0 39px;
+          border-radius: 10px;
+          background: #edf3ff;
+          color: var(--tm-blue);
+          display: flex;
           align-items: center;
           justify-content: center;
+          font-size: 11px;
+          font-weight: 800;
+          letter-spacing: 0.03em;
+        }
 
-          border: none;
+        .memory-card-content {
+          min-width: 0;
+        }
 
-          border-radius: 7px;
+        .memory-card-content h2 {
+          margin: 0;
+          font-size: 15px;
+          line-height: 1.35;
+          font-weight: 720;
+          letter-spacing: -0.015em;
+          color: #202938;
+        }
 
+        .memory-card-content p {
+          display: -webkit-box;
+          -webkit-line-clamp: 2;
+          -webkit-box-orient: vertical;
+          overflow: hidden;
+          margin: 6px 0 0;
+          color: #798394;
+          font-size: 12px;
+          line-height: 1.55;
+        }
+
+        .memory-meta {
+          display: flex;
+          align-items: center;
+          gap: 7px;
+          min-height: 24px;
+          flex-wrap: wrap;
+          margin-bottom: 13px;
+        }
+
+        .category-label,
+        .deadline-label {
+          display: inline-flex;
+          align-items: center;
+          height: 23px;
+          padding: 0 8px;
+          border-radius: 6px;
+          font-size: 10px;
+          font-weight: 700;
+        }
+
+        .category-label {
+          background: #f4f6f9;
+          color: #687385;
+        }
+
+        .deadline-label {
+          background: #f4f6f9;
+          color: #697586;
+        }
+
+        .deadline-label.urgent {
+          color: #b42318;
+          background: #fff1f0;
+        }
+
+        .deadline-label.soon {
+          color: var(--tm-warning);
+          background: #fff8eb;
+        }
+
+        .deadline-label.expired {
+          color: #8b1e1e;
+          background: #fceaea;
+        }
+
+        .card-bottom {
+          border-top: 1px solid #edf0f4;
+          padding-top: 12px;
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 12px;
+          color: #9aa3b1;
+          font-size: 10px;
+        }
+
+        .card-actions {
+          display: flex;
+          align-items: center;
+          gap: 12px;
+        }
+
+        .view-link {
+          color: var(--tm-blue);
+          text-decoration: none;
+          font-size: 11px;
+          font-weight: 750;
+          white-space: nowrap;
+        }
+
+        .view-link span {
+          margin-left: 3px;
+        }
+
+        .delete-button {
+          border: 0;
           background: transparent;
-
-          color: #a0a0a0;
-
+          color: #9ca3af;
+          font-size: 10px;
           cursor: pointer;
         }
 
-        .tm-favorite:hover {
-          background: #f5f5f5;
-          color: #333333;
+        .delete-button:hover {
+          color: var(--tm-danger);
         }
 
-        .tm-favorite svg {
-          width: 20px;
-          height: 20px;
-
-          fill: none;
-
-          stroke: currentColor;
-
-          stroke-width: 1.8;
+        .delete-button:disabled {
+          opacity: 0.5;
+          cursor: default;
         }
 
-        .tm-favorite .tm-star-filled {
-          fill: currentColor;
-        }
+        /* EMPTY */
 
-        .tm-favorite-active {
-          color: #171717;
-        }
-
-        .tm-card-body {
-          flex: 1;
-
-          padding: 25px 0 22px;
-        }
-
-        .tm-card-body h2 {
-          margin: 0;
-
-          color: #171717;
-
-          font-size: 19px;
-
-          line-height: 1.35;
-
-          font-weight: 700;
-
-          letter-spacing: -0.018em;
-
-          overflow-wrap: anywhere;
-        }
-
-        .tm-card-body p {
-          margin: 10px 0 0;
-
-          color: #777777;
-
-          font-size: 13px;
-
-          line-height: 1.65;
-
-          display: -webkit-box;
-
-          -webkit-line-clamp: 3;
-
-          -webkit-box-orient: vertical;
-
-          overflow: hidden;
-        }
-
-        .tm-card-body .tm-no-summary {
-          color: #a0a0a0;
-        }
-
-        .tm-card-bottom {
-          padding-top: 15px;
-
-          display: flex;
-
-          align-items: flex-start;
-
-          justify-content: space-between;
-
-          gap: 18px;
-
-          border-top: 1px solid #eeeeee;
-        }
-
-        .tm-card-bottom > div {
-          display: flex;
-
-          flex-direction: column;
-
-          gap: 4px;
-        }
-
-        .tm-deadline {
-          text-align: right;
-        }
-
-        .tm-meta-label {
-          color: #9a9a9a;
-
-          font-size: 10px;
-
-          font-weight: 700;
-
-          letter-spacing: 0.06em;
-        }
-
-        .tm-meta-value {
-          color: #5f5f5f;
-
-          font-size: 12px;
-
-          font-weight: 600;
-        }
-
-        .tm-deadline .tm-meta-value {
-          color: #171717;
-        }
-
-        /* =================================
-           LOADING
-        ================================= */
-
-        .tm-loading {
-          min-height: 300px;
-
-          display: flex;
-
-          flex-direction: column;
-
-          align-items: center;
-          justify-content: center;
-
-          gap: 13px;
-
-          color: #888888;
-        }
-
-        .tm-spinner {
-          width: 25px;
-          height: 25px;
-
-          border: 2px solid #e5e5e5;
-
-          border-top-color: #333333;
-
-          border-radius: 50%;
-
-          animation: tm-spin 0.8s linear infinite;
-        }
-
-        @keyframes tm-spin {
-          to {
-            transform: rotate(360deg);
-          }
-        }
-
-        /* =================================
-           EMPTY
-        ================================= */
-
-        .tm-empty {
-          min-height: 330px;
-
-          padding: 40px 20px;
-
-          display: flex;
-
-          flex-direction: column;
-
-          align-items: center;
-          justify-content: center;
-
+        .empty-state {
+          background: white;
+          border: 1px dashed #d8dee8;
+          border-radius: 18px;
+          padding: 65px 25px;
           text-align: center;
-
-          background: #ffffff;
-
-          border: 1px solid #e5e5e5;
-
-          border-radius: 13px;
         }
 
-        .tm-empty-icon {
-          width: 52px;
-          height: 52px;
-
-          margin-bottom: 18px;
-
+        .empty-mark {
+          width: 48px;
+          height: 48px;
+          border-radius: 13px;
+          margin: 0 auto 16px;
           display: flex;
-
           align-items: center;
           justify-content: center;
-
-          border-radius: 12px;
-
-          background: #f3f3f3;
-
-          color: #666666;
+          background: #edf3ff;
+          color: var(--tm-blue);
+          font-size: 12px;
+          font-weight: 800;
         }
 
-        .tm-empty-icon svg {
-          width: 24px;
-          height: 24px;
-
-          fill: none;
-
-          stroke: currentColor;
-
-          stroke-width: 1.8;
-        }
-
-        .tm-empty h2 {
+        .empty-state h2 {
           margin: 0;
-
           font-size: 19px;
-
-          font-weight: 700;
+          letter-spacing: -0.02em;
         }
 
-        .tm-empty p {
-          max-width: 390px;
-
-          margin: 9px 0 20px;
-
-          color: #858585;
-
+        .empty-state p {
+          max-width: 460px;
+          margin: 9px auto 20px;
+          color: var(--tm-muted);
           font-size: 13px;
-
           line-height: 1.6;
         }
 
-        .tm-empty-button {
-          height: 40px;
-
-          padding: 0 16px;
-
+        .empty-button {
           display: inline-flex;
-
           align-items: center;
-
-          border-radius: 8px;
-
-          background: #171717;
-
-          color: #ffffff;
-
+          justify-content: center;
+          min-height: 40px;
+          padding: 0 15px;
+          border-radius: 9px;
+          background: var(--tm-text);
+          color: white;
           text-decoration: none;
-
-          font-size: 13px;
-
-          font-weight: 600;
+          border: 0;
+          font-size: 12px;
+          font-weight: 700;
+          cursor: pointer;
         }
 
-        /* =================================
-           TABLET
-        ================================= */
+        /* ERRORS */
 
-        @media (max-width: 850px) {
+        .error-box {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 20px;
+          padding: 13px 15px;
+          margin-bottom: 18px;
+          background: #fff5f5;
+          border: 1px solid #fed7d7;
+          border-radius: 11px;
+        }
 
-          .tm-sidebar {
-            width: 190px;
+        .error-box div {
+          display: flex;
+          flex-direction: column;
+          gap: 3px;
+        }
+
+        .error-box strong {
+          color: #991b1b;
+          font-size: 12px;
+        }
+
+        .error-box span {
+          color: #b45353;
+          font-size: 11px;
+        }
+
+        .error-box button {
+          border: 0;
+          background: #991b1b;
+          color: white;
+          border-radius: 7px;
+          padding: 7px 10px;
+          font-size: 11px;
+          font-weight: 700;
+          cursor: pointer;
+        }
+
+        .action-error {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 10px;
+          margin-bottom: 15px;
+          padding: 10px 13px;
+          background: #fff7ed;
+          border: 1px solid #fed7aa;
+          color: #9a3412;
+          border-radius: 9px;
+          font-size: 11px;
+        }
+
+        .action-error button {
+          border: 0;
+          background: transparent;
+          color: inherit;
+          font-size: 17px;
+          cursor: pointer;
+        }
+
+        /* SKELETON */
+
+        .memory-skeleton {
+          min-height: 205px;
+          border: 1px solid var(--tm-line);
+          border-radius: 15px;
+          padding: 18px;
+          background: white;
+          overflow: hidden;
+          position: relative;
+        }
+
+        .memory-skeleton::after {
+          content: "";
+          position: absolute;
+          inset: 0;
+          transform: translateX(-100%);
+          background: linear-gradient(
+            90deg,
+            transparent,
+            rgba(255, 255, 255, 0.75),
+            transparent
+          );
+          animation: tm-shimmer 1.5s infinite;
+        }
+
+        .skeleton-line {
+          width: 75%;
+          height: 11px;
+          border-radius: 6px;
+          background: #edf0f4;
+          margin-bottom: 13px;
+        }
+
+        .skeleton-line.small {
+          width: 18%;
+          height: 22px;
+          margin-bottom: 17px;
+        }
+
+        .skeleton-line.title {
+          width: 65%;
+          height: 15px;
+        }
+
+        .skeleton-line.short {
+          width: 45%;
+        }
+
+        .skeleton-footer {
+          position: absolute;
+          left: 18px;
+          right: 18px;
+          bottom: 18px;
+          height: 1px;
+          background: #edf0f4;
+        }
+
+        @keyframes tm-shimmer {
+          100% {
+            transform: translateX(100%);
+          }
+        }
+
+        /* RESPONSIVE */
+
+        @media (max-width: 900px) {
+          .memories-page {
+            padding: 30px 22px 55px;
           }
 
-          .tm-main {
-            margin-left: 190px;
-          }
-
-          .tm-content {
-            width: calc(100% - 40px);
-          }
-
-          .tm-memory-grid {
+          .memory-grid {
             grid-template-columns: 1fr;
           }
 
-        }
+          .filter-section {
+            align-items: flex-start;
+            flex-direction: column;
+          }
 
-        /* =================================
-           MOBILE
-        ================================= */
+          .filter-controls {
+            justify-content: flex-start;
+          }
+        }
 
         @media (max-width: 650px) {
-
-          .tm-sidebar {
-            top: auto;
-            bottom: 0;
-            left: 0;
-
-            width: 100%;
-            height: 64px;
-
-            padding: 6px 8px;
-
-            border-right: none;
-
-            border-top: 1px solid #e5e5e5;
-
-            flex-direction: row;
+          .memories-page {
+            padding: 24px 15px 45px;
           }
 
-          .tm-brand {
-            display: none;
-          }
-
-          .tm-navigation {
-            width: 100%;
-
-            display: grid;
-
-            grid-template-columns:
-              repeat(5, 1fr);
-
-            gap: 3px;
-          }
-
-          .tm-navigation-item {
-            width: 100%;
-            height: 50px;
-
-            padding: 4px 2px;
-
-            flex-direction: column;
-
-            align-items: center;
-            justify-content: center;
-
-            gap: 4px;
-          }
-
-          .tm-icon {
-            width: 18px;
-            height: 18px;
-
-            min-width: 18px;
-            min-height: 18px;
-
-            max-width: 18px;
-            max-height: 18px;
-
-            flex: 0 0 18px;
-          }
-
-          .tm-icon svg {
-            width: 18px !important;
-            height: 18px !important;
-
-            min-width: 18px !important;
-            min-height: 18px !important;
-
-            max-width: 18px !important;
-            max-height: 18px !important;
-          }
-
-          .tm-label {
-            font-size: 9px;
-          }
-
-          .tm-profile-navigation {
-            display: none;
-          }
-
-          .tm-main {
-            margin-left: 0;
-
-            padding-bottom: 70px;
-          }
-
-          .tm-content {
-            width: calc(100% - 28px);
-
-            padding: 30px 0 40px;
-          }
-
-          .tm-header {
-            flex-direction: column;
-
+          .memories-header {
             align-items: flex-start;
-
-            gap: 18px;
-
-            margin-bottom: 24px;
+            flex-direction: column;
+            margin-bottom: 22px;
           }
 
-          .tm-header h1 {
-            font-size: 30px;
-          }
-
-          .tm-capture-button {
+          .add-memory-button {
             width: 100%;
+            justify-content: center;
           }
 
-          .tm-memory-grid {
+          .memory-search {
+            height: 58px;
+          }
+
+          .search-hint {
+            display: none;
+          }
+
+          .memory-stats {
             grid-template-columns: 1fr;
           }
 
-          .tm-memory-card {
-            min-height: 225px;
+          .stat-card {
+            min-height: 72px;
           }
 
+          .filter-controls {
+            width: 100%;
+          }
+
+          .filter-controls select {
+            flex: 1;
+            min-width: 0;
+          }
+
+          .memory-card {
+            padding: 15px;
+          }
+
+          .card-bottom {
+            align-items: flex-start;
+            flex-direction: column;
+          }
+
+          .card-actions {
+            width: 100%;
+            justify-content: space-between;
+          }
         }
-
       `}</style>
-
-    </div>
   );
 }

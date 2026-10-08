@@ -14,14 +14,14 @@ export default function Signup() {
 
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
-  const [googleLoading, setGoogleLoading] = useState(false);
 
-  const handleSignup = async (e: React.FormEvent<HTMLFormElement>) => {
+  const handleSignup = async (
+    e: React.FormEvent<HTMLFormElement>
+  ) => {
     e.preventDefault();
-
     setMessage("");
 
-    if (!name.trim() || !email.trim() || !password) {
+    if (!name || !email || !password) {
       setMessage("Please fill in all fields.");
       return;
     }
@@ -34,11 +34,11 @@ export default function Signup() {
     setLoading(true);
 
     const { error } = await supabase.auth.signUp({
-      email: email.trim(),
+      email,
       password,
       options: {
         data: {
-          name: name.trim(),
+          name: name,
         },
       },
     });
@@ -51,7 +51,7 @@ export default function Signup() {
     }
 
     setMessage(
-      "Account created successfully! Please check your email to verify your account."
+      "Account created! Please check your email to verify your account."
     );
 
     setName("");
@@ -61,494 +61,171 @@ export default function Signup() {
 
   const handleGoogleSignup = async () => {
     setMessage("");
-    setGoogleLoading(true);
+    setLoading(true);
 
     const { error } = await supabase.auth.signInWithOAuth({
       provider: "google",
       options: {
-        redirectTo: `${window.location.origin}/dashboard`,
+        redirectTo: `${window.location.origin}/auth/callback`,
       },
     });
 
     if (error) {
-      console.error("Google signup error:", error);
-      setGoogleLoading(false);
+      setLoading(false);
       setMessage(error.message);
     }
   };
 
   return (
-    <main className="signup-page">
-      <div className="glow glow-one" />
-      <div className="glow glow-two" />
+    <main className="auth-page">
 
-      <section className="signup-card">
-        {/* Logo */}
-        <div className="logo-area">
-          <Logo />
+      {/* LEFT SIDE */}
+      <section className="auth-visual">
+        <Logo />
+
+        <div className="auth-visual-content">
+          <h1>
+            Build a memory of
+            <br />
+            what matters.
+          </h1>
+
+          <p>
+            Capture once. Understand automatically.
+            Find it whenever you need it.
+          </p>
+
+          <div className="auth-points">
+            <div>📸 Screenshots & PDFs</div>
+            <div>🔗 Links & text</div>
+            <div>🎙 Voice notes</div>
+          </div>
         </div>
+      </section>
 
-        {/* Heading */}
-        <div className="heading">
-          <div className="eyebrow">PERSONAL MEMORY ENGINE</div>
+      {/* RIGHT SIDE */}
+      <section className="auth-card">
+        <div className="auth-form">
+
+          <Logo />
 
           <h1>Create your account</h1>
 
-          <p>
-            Save what you find, understand what matters, and find it again
-            whenever you need it.
+          <p className="muted">
+            Start organizing the information you don't want to lose.
           </p>
-        </div>
 
-        {/* Google */}
-        <button
-          type="button"
-          className="google-button"
-          onClick={handleGoogleSignup}
-          disabled={googleLoading || loading}
-        >
-          <span className="google-icon">G</span>
+          {/* GOOGLE */}
+          <button
+            type="button"
+            className="google-btn"
+            onClick={handleGoogleSignup}
+            disabled={loading}
+          >
+            <svg
+              width="20"
+              height="20"
+              viewBox="0 0 24 24"
+              aria-hidden="true"
+            >
+              <path
+                fill="#4285F4"
+                d="M21.35 12.27c0-.72-.06-1.42-.18-2.09H12v3.95h5.24a4.48 4.48 0 0 1-1.94 2.94v2.45h3.14c1.84-1.69 2.91-4.18 2.91-7.25z"
+              />
 
-          <span>
-            {googleLoading ? "Connecting..." : "Continue with Google"}
-          </span>
-        </button>
+              <path
+                fill="#34A853"
+                d="M12 21.99c2.63 0 4.84-.87 6.45-2.47l-3.14-2.45c-.87.58-1.98.93-3.31.93-2.54 0-4.69-1.72-5.46-4.03H3.3v2.53A9.74 9.74 0 0 0 12 21.99z"
+              />
 
-        {/* Divider */}
-        <div className="divider">
-          <span>or continue with email</span>
-        </div>
+              <path
+                fill="#FBBC05"
+                d="M6.54 13.97A5.86 5.86 0 0 1 6.23 12c0-.68.12-1.34.31-1.97V7.5H3.3A9.74 9.74 0 0 0 2.25 12c0 1.57.38 3.05 1.05 4.5l3.24-2.53z"
+              />
 
-        {/* Form */}
-        <form onSubmit={handleSignup} className="signup-form">
-          <div className="input-group">
-            <label htmlFor="name">Full name</label>
+              <path
+                fill="#EA4335"
+                d="M12 5.99c1.43 0 2.71.49 3.72 1.45l2.79-2.79C16.84 3.04 14.63 2 12 2a9.74 9.74 0 0 0-8.7 5.5l3.24 2.53C7.31 7.71 9.46 5.99 12 5.99z"
+              />
+            </svg>
+
+            <span>Continue with Google</span>
+          </button>
+
+          <div className="divider">
+            <span>OR USE EMAIL</span>
+          </div>
+
+          {/* EMAIL SIGNUP */}
+          <form onSubmit={handleSignup}>
+
+            <label className="label">
+              Name
+            </label>
 
             <input
-              id="name"
+              className="input"
               type="text"
-              placeholder="Enter your name"
+              placeholder="Your name"
               value={name}
               onChange={(e) => setName(e.target.value)}
               autoComplete="name"
             />
-          </div>
 
-          <div className="input-group">
-            <label htmlFor="email">Email address</label>
+            <label className="label">
+              Email
+            </label>
 
             <input
-              id="email"
+              className="input"
               type="email"
               placeholder="you@example.com"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               autoComplete="email"
             />
-          </div>
 
-          <div className="input-group">
-            <label htmlFor="password">Password</label>
+            <label className="label">
+              Password
+            </label>
 
             <input
-              id="password"
+              className="input"
               type="password"
-              placeholder="Create a password"
+              placeholder="At least 8 characters"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               autoComplete="new-password"
             />
 
-            <small>At least 8 characters</small>
-          </div>
-
-          {/* Message */}
-          {message && (
-            <div
-              className={`message ${
-                message.includes("successfully") ? "success" : ""
-              }`}
+            <button
+              className="primary-btn"
+              type="submit"
+              disabled={loading}
             >
+              {loading ? "Creating account..." : "Create account"}
+            </button>
+
+          </form>
+
+          {message && (
+            <p className="auth-message">
               {message}
-            </div>
+            </p>
           )}
 
-          {/* Submit */}
-          <button
-            type="submit"
-            className="create-button"
-            disabled={loading || googleLoading}
-          >
-            {loading ? (
-              "Creating account..."
-            ) : (
-              <>
-                Create account
-                <span>→</span>
-              </>
-            )}
-          </button>
-        </form>
+          <p className="muted">
+            Already have an account?{" "}
+            <Link
+              className="auth-link"
+              href="/login"
+            >
+              Log in
+            </Link>
+          </p>
 
-        {/* Login */}
-        <div className="login-text">
-          Already have an account?
-
-          <Link href="/login">Sign in</Link>
-        </div>
-
-        {/* Privacy */}
-        <div className="privacy">
-          Your information belongs to you.
         </div>
       </section>
-
-      <style jsx>{`
-        .signup-page {
-          min-height: 100vh;
-          width: 100%;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          position: relative;
-          overflow: hidden;
-
-          padding: 40px 20px;
-
-          background:
-            radial-gradient(
-              circle at 10% 15%,
-              rgba(99, 102, 241, 0.1),
-              transparent 30%
-            ),
-            radial-gradient(
-              circle at 90% 85%,
-              rgba(14, 165, 233, 0.09),
-              transparent 30%
-            ),
-            #f8fafc;
-
-          color: #111827;
-        }
-
-        .glow {
-          position: absolute;
-          width: 400px;
-          height: 400px;
-          border-radius: 50%;
-          filter: blur(100px);
-          pointer-events: none;
-        }
-
-        .glow-one {
-          top: -250px;
-          left: -180px;
-          background: rgba(99, 102, 241, 0.1);
-        }
-
-        .glow-two {
-          bottom: -250px;
-          right: -180px;
-          background: rgba(14, 165, 233, 0.09);
-        }
-
-        .signup-card {
-          position: relative;
-          z-index: 2;
-
-          width: 100%;
-          max-width: 470px;
-
-          padding: 42px;
-
-          border: 1px solid rgba(226, 232, 240, 0.9);
-          border-radius: 28px;
-
-          background: rgba(255, 255, 255, 0.95);
-
-          box-shadow:
-            0 25px 70px rgba(15, 23, 42, 0.08),
-            0 4px 12px rgba(15, 23, 42, 0.03);
-
-          backdrop-filter: blur(20px);
-        }
-
-        .logo-area {
-          margin-bottom: 32px;
-        }
-
-        .heading {
-          margin-bottom: 25px;
-        }
-
-        .eyebrow {
-          margin-bottom: 10px;
-
-          font-size: 11px;
-          font-weight: 700;
-          letter-spacing: 0.15em;
-
-          color: #6366f1;
-        }
-
-        .heading h1 {
-          margin: 0;
-
-          font-size: 34px;
-          line-height: 1.15;
-          letter-spacing: -0.04em;
-
-          color: #0f172a;
-        }
-
-        .heading p {
-          margin: 12px 0 0;
-
-          font-size: 15px;
-          line-height: 1.6;
-
-          color: #64748b;
-        }
-
-        .google-button {
-          width: 100%;
-          height: 52px;
-
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          gap: 12px;
-
-          border: 1px solid #e2e8f0;
-          border-radius: 14px;
-
-          background: #ffffff;
-          color: #1e293b;
-
-          font-size: 14px;
-          font-weight: 600;
-
-          cursor: pointer;
-
-          transition:
-            transform 0.2s ease,
-            box-shadow 0.2s ease,
-            border-color 0.2s ease;
-        }
-
-        .google-button:hover:not(:disabled) {
-          transform: translateY(-1px);
-          border-color: #cbd5e1;
-          box-shadow: 0 8px 20px rgba(15, 23, 42, 0.07);
-        }
-
-        .google-button:disabled {
-          opacity: 0.6;
-          cursor: not-allowed;
-        }
-
-        .google-icon {
-          width: 24px;
-          height: 24px;
-
-          display: flex;
-          align-items: center;
-          justify-content: center;
-
-          font-size: 19px;
-          font-weight: 700;
-
-          color: #4285f4;
-        }
-
-        .divider {
-          display: flex;
-          align-items: center;
-          gap: 14px;
-
-          margin: 24px 0;
-
-          color: #94a3b8;
-          font-size: 12px;
-        }
-
-        .divider::before,
-        .divider::after {
-          content: "";
-
-          flex: 1;
-          height: 1px;
-
-          background: #e2e8f0;
-        }
-
-        .signup-form {
-          display: flex;
-          flex-direction: column;
-          gap: 18px;
-        }
-
-        .input-group {
-          display: flex;
-          flex-direction: column;
-          gap: 8px;
-        }
-
-        .input-group label {
-          font-size: 13px;
-          font-weight: 600;
-          color: #334155;
-        }
-
-        .input-group input {
-          width: 100%;
-          height: 50px;
-          box-sizing: border-box;
-
-          padding: 0 15px;
-
-          border: 1px solid #dbe2ea;
-          border-radius: 13px;
-
-          outline: none;
-
-          background: #ffffff;
-          color: #0f172a;
-
-          font-size: 14px;
-
-          transition:
-            border-color 0.2s ease,
-            box-shadow 0.2s ease;
-        }
-
-        .input-group input::placeholder {
-          color: #a1aab8;
-        }
-
-        .input-group input:focus {
-          border-color: #818cf8;
-
-          box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.09);
-        }
-
-        .input-group small {
-          font-size: 11px;
-          color: #94a3b8;
-        }
-
-        .message {
-          padding: 12px 14px;
-
-          border-radius: 11px;
-
-          background: #fef2f2;
-          border: 1px solid #fecaca;
-
-          color: #b91c1c;
-
-          font-size: 13px;
-          line-height: 1.5;
-        }
-
-        .message.success {
-          background: #f0fdf4;
-          border-color: #bbf7d0;
-          color: #15803d;
-        }
-
-        .create-button {
-          width: 100%;
-          height: 52px;
-
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          gap: 10px;
-
-          margin-top: 2px;
-
-          border: none;
-          border-radius: 14px;
-
-          background: #111827;
-          color: #ffffff;
-
-          font-size: 14px;
-          font-weight: 700;
-
-          cursor: pointer;
-
-          transition:
-            transform 0.2s ease,
-            box-shadow 0.2s ease,
-            background 0.2s ease;
-        }
-
-        .create-button:hover:not(:disabled) {
-          background: #1f2937;
-          transform: translateY(-1px);
-          box-shadow: 0 10px 25px rgba(15, 23, 42, 0.15);
-        }
-
-        .create-button:disabled {
-          opacity: 0.6;
-          cursor: not-allowed;
-        }
-
-        .create-button span {
-          font-size: 18px;
-        }
-
-        .login-text {
-          margin-top: 24px;
-
-          text-align: center;
-
-          font-size: 13px;
-          color: #64748b;
-        }
-
-        .login-text a {
-          margin-left: 5px;
-
-          color: #4f46e5;
-
-          font-weight: 700;
-          text-decoration: none;
-        }
-
-        .login-text a:hover {
-          text-decoration: underline;
-        }
-
-        .privacy {
-          margin-top: 20px;
-          padding-top: 17px;
-
-          border-top: 1px solid #eef2f7;
-
-          text-align: center;
-
-          font-size: 11px;
-          color: #94a3b8;
-        }
-
-        @media (max-width: 520px) {
-          .signup-page {
-            padding: 20px 14px;
-          }
-
-          .signup-card {
-            padding: 30px 22px;
-            border-radius: 22px;
-          }
-
-          .heading h1 {
-            font-size: 29px;
-          }
-        }
-      `}</style>
     </main>
   );
 }

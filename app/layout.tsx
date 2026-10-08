@@ -1,18 +1,17 @@
+import type { ReactNode } from "react";
 import "./globals.css";
-
-export const metadata = {
-  title: "TraceMind — Your personal information memory",
-  description: "Capture it. Understand it. Find it later.",
-};
+import AppShell from "../components/AppShell";
 
 export default function RootLayout({
   children,
 }: {
-  children: React.ReactNode;
+  children: ReactNode;
 }) {
   return (
     <html lang="en">
-      <body>{children}</body>
+      <body>
+        <AppShell>{children}</AppShell>
+      </body>
     </html>
   );
 }

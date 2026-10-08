@@ -12,13 +12,7 @@ export default function MemoryCard({ memory }: { memory: Memory }) {
       <p>{memory.summary || "No summary yet. Open this memory to add context."}</p>
       <div className="memory-meta">
         <span>{memory.source_type}</span>
-      <span>
-  {new Date(memory.created_at).toLocaleDateString("en-IN", {
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-  })}
-</span>
+        <span>{new Date(memory.created_at).toLocaleDateString()}</span>
       </div>
     </Link>
   );

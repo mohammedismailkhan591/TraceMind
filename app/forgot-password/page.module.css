@@ -1,0 +1,276 @@
+.page {
+  min-height: 100vh;
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 32px 20px;
+  background: #f6f6f3;
+  color: #18191c;
+}
+
+.backgroundShapeOne {
+  position: absolute;
+  width: 520px;
+  height: 520px;
+  top: -280px;
+  right: -180px;
+  border-radius: 50%;
+  background: #ecece8;
+  pointer-events: none;
+}
+
+.backgroundShapeTwo {
+  position: absolute;
+  width: 430px;
+  height: 430px;
+  bottom: -260px;
+  left: -170px;
+  border-radius: 50%;
+  background: #ededeb;
+  pointer-events: none;
+}
+
+.authCard {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  max-width: 430px;
+  padding: 38px 42px 30px;
+  background: rgba(255, 255, 255, 0.96);
+  border: 1px solid #e4e4e1;
+  border-radius: 16px;
+  box-shadow: 0 20px 60px rgba(25, 26, 29, 0.07);
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  margin-bottom: 25px;
+}
+
+.brandMark {
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9px;
+  background: #1d1e21;
+  color: #ffffff;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.brandName {
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.brandTagline {
+  margin-top: 3px;
+  color: #999b9f;
+  font-size: 9px;
+}
+
+.backLink {
+  display: inline-block;
+  margin-bottom: 25px;
+  color: #777a80;
+  font-size: 10px;
+  text-decoration: none;
+}
+
+.backLink:hover {
+  color: #1d1e21;
+}
+
+.heading {
+  margin-bottom: 24px;
+}
+
+.iconCircle {
+  width: 34px;
+  height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 15px;
+  border: 1px solid #dedfdd;
+  border-radius: 50%;
+  color: #55575c;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.heading h1 {
+  font-size: 25px;
+  line-height: 1.15;
+  letter-spacing: -0.7px;
+}
+
+.heading p {
+  max-width: 340px;
+  margin-top: 9px;
+  color: #85878c;
+  font-size: 11px;
+  line-height: 1.6;
+}
+
+.errorBox,
+.successBox {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  margin-bottom: 17px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  font-size: 10px;
+  line-height: 1.45;
+}
+
+.errorBox {
+  border: 1px solid #ead5d5;
+  background: #fcf5f5;
+  color: #9b4a4a;
+}
+
+.successBox {
+  border: 1px solid #d4e6d9;
+  background: #f4faf5;
+  color: #4c7656;
+}
+
+.errorIcon,
+.successIcon {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  color: white;
+  font-size: 9px;
+  font-weight: 700;
+}
+
+.errorIcon {
+  background: #b85c5c;
+}
+
+.successIcon {
+  background: #5d9068;
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 17px;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.field label {
+  color: #44464a;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.field input {
+  width: 100%;
+  height: 44px;
+  padding: 0 12px;
+  border: 1px solid #dedfdd;
+  border-radius: 8px;
+  outline: none;
+  background: #ffffff;
+  color: #202125;
+  font-size: 12px;
+}
+
+.field input::placeholder {
+  color: #b0b1b4;
+}
+
+.field input:focus {
+  border-color: #96989d;
+  box-shadow: 0 0 0 3px rgba(30, 31, 34, 0.05);
+}
+
+.primaryButton {
+  width: 100%;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 0;
+  border-radius: 8px;
+  background: #1d1e21;
+  color: #ffffff;
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.primaryButton:hover:not(:disabled) {
+  background: #303136;
+}
+
+.primaryButton:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+
+.spinner {
+  width: 13px;
+  height: 13px;
+  border: 2px solid rgba(255, 255, 255, 0.35);
+  border-top-color: white;
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}
+
+.loginText {
+  margin-top: 23px;
+  text-align: center;
+  color: #8a8c91;
+  font-size: 10px;
+}
+
+.loginText a {
+  color: #292b2f;
+  font-weight: 650;
+  text-decoration: none;
+}
+
+.footer {
+  margin-top: 27px;
+  padding-top: 15px;
+  border-top: 1px solid #eeeeec;
+  text-align: center;
+  color: #b0b1b3;
+  font-size: 8px;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (max-width: 520px) {
+  .page {
+    padding: 20px 14px;
+  }
+
+  .authCard {
+    padding: 30px 24px 25px;
+  }
+}

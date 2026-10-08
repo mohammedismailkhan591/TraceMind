@@ -1,1253 +1,1002 @@
-
-"use client";
-
+import { createServerClient } from "../../../lib/supabase-server";
+import { cookies } from "next/headers";
 import Link from "next/link";
-import { useParams, useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
-import Sidebar from "../../../components/sidebar";
-import { createClient } from "../../../lib/supabase";
 
-type Memory = {
-  id: string;
-  title: string;
-  summary: string | null;
-  content: string | null;
-  category: string | null;
-  source_type: string;
-  source_url: string | null;
-  deadline: string | null;
-  is_favorite: boolean;
-  created_at: string;
-  updated_at: string;
-};
-
-type Asset = {
-  id: string;
-  storage_path: string;
-  file_name: string | null;
-  mime_type: string | null;
-  file_size: number | null;
-  created_at: string;
-};
-
-export default function MemoryDetailPage() {
-  const params = useParams();
-  const router = useRouter();
-  const memoryId = params?.id as string;
-
-  const [memory, setMemory] = useState<Memory | null>(null);
-  const [asset, setAsset] = useState<Asset | null>(null);
-  const [assetUrl, setAssetUrl] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [favoriteLoading, setFavoriteLoading] = useState(false);
-  const [deleting, setDeleting] = useState(false);
-
-  const supabase = createClient();
-
-  useEffect(() => {
-    if (memoryId) {
-      loadMemory();
-    }
-  }, [memoryId]);
-
-  async function loadMemory() {
-    setLoading(true);
-
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-
-    if (!user) {
-      router.push("/login");
-      return;
-    }
-
-    const { data: memoryData, error: memoryError } = await supabase
-      .from("memories")
-      .select("*")
-      .eq("id", memoryId)
-      .eq("user_id", user.id)
-      .single();
-
-    if (memoryError || !memoryData) {
-      setMemory(null);
-      setLoading(false);
-      return;
-    }
-
-    setMemory(memoryData);
-
-    const { data: assetData } = await supabase
-      .from("memory_assets")
-      .select("*")
-      .eq("memory_id", memoryId)
-      .eq("user_id", user.id)
-      .order("created_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
-
-    if (assetData) {
-      setAsset(assetData);
-
-      const { data: signedData } = await supabase.storage
-        .from("memory-assets")
-        .createSignedUrl(assetData.storage_path, 60 * 60);
-
-      if (signedData?.signedUrl) {
-        setAssetUrl(signedData.signedUrl);
-      }
-    }
-
-    setLoading(false);
-  }
-
-  async function toggleFavorite() {
-    if (!memory || favoriteLoading) return;
-
-    setFavoriteLoading(true);
-
-    const newValue = !memory.is_favorite;
-
-    const { error } = await supabase
-      .from("memories")
-      .update({
-        is_favorite: newValue,
-      })
-      .eq("id", memory.id);
-
-    if (!error) {
-      setMemory({
-        ...memory,
-        is_favorite: newValue,
-      });
-    }
-
-    setFavoriteLoading(false);
-  }
+export default async function MemoryDetail({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}) {
+  const { id } = await params;
 
   async function deleteMemory() {
-    if (!memory || deleting) return;
-
-    const confirmed = window.confirm(
-      "Are you sure you want to delete this memory?"
-    );
-
-    if (!confirmed) return;
-
-    setDeleting(true);
-
-    if (asset) {
-      await supabase.storage
-        .from("memory-assets")
-        .remove([asset.storage_path]);
-
-      await supabase
-        .from("memory_assets")
-        .delete()
-        .eq("id", asset.id);
-    }
-
-    const { error } = await supabase
-      .from("memories")
-      .delete()
-      .eq("id", memory.id);
-
-    if (error) {
-      alert("Unable to delete this memory.");
-      setDeleting(false);
-      return;
-    }
-
-    router.push("/memories");
+    "use server";
+    const store = await cookies();
+    const client = createServerClient(store);
+    const { data: { user: currentUser } } = await client.auth.getUser();
+    if (!currentUser) return;
+    await client.from("memories").delete().eq("id", id).eq("user_id", currentUser.id);
   }
 
-  function formatDate(date: string) {
-    return new Date(date).toLocaleDateString("en-IN", {
-      day: "numeric",
-      month: "long",
-      year: "numeric",
-    });
-  }
+  const cookieStore = await cookies();
+  const supabase = createServerClient(cookieStore);
 
-  function formatFileSize(bytes: number | null) {
-    if (!bytes) return "Unknown size";
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
 
-    if (bytes < 1024) {
-      return `${bytes} B`;
-    }
-
-    if (bytes < 1024 * 1024) {
-      return `${(bytes / 1024).toFixed(1)} KB`;
-    }
-
-    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-  }
-
-  function getSourceLabel(sourceType: string) {
-    switch (sourceType) {
-      case "image":
-        return "Image";
-      case "pdf":
-        return "PDF";
-      case "website":
-        return "Website";
-      case "text":
-        return "Text";
-      case "voice":
-        return "Voice";
-      default:
-        return sourceType || "Memory";
-    }
-  }
-
-  function getInitial(title: string) {
-    return title?.charAt(0)?.toUpperCase() || "T";
-  }
-
-  if (loading) {
+  if (!user) {
     return (
-      <>
-        <Sidebar />
+          <div className="detail-page">
+          <div className="error-box">
+            <h2>Session expired</h2>
+            <p>Please login again to view this memory.</p>
 
-        <main className="memory-page">
-          <div className="loading-screen">
-            <div className="loading-spinner" />
-            <p>Loading memory...</p>
+            <Link href="/login" className="primary-button">
+              Login
+            </Link>
           </div>
-        </main>
-
-        <PageStyles />
-      </>
-    );
+        </div>
+      );
   }
 
-  if (!memory) {
+  const { data: memory, error } = await supabase
+    .from("memories")
+    .select(`
+      id,
+      title,
+      summary,
+      content,
+      category,
+      source_type,
+      source_url,
+      deadline,
+      is_favorite,
+      created_at,
+      updated_at
+    `)
+    .eq("id", id)
+    .eq("user_id", user.id)
+    .single();
+
+  if (error || !memory) {
     return (
-      <>
-        <Sidebar />
+          <div className="detail-page">
 
-        <main className="memory-page">
+          <Link href="/memories" className="back-link">
+            ← Back to memories
+          </Link>
+
           <div className="not-found">
-            <div className="not-found-icon">?</div>
+            <div className="not-found-icon">
+              <FileIcon />
+            </div>
 
-            <p className="eyebrow">MEMORY NOT FOUND</p>
-
-            <h1>This memory doesn't exist.</h1>
+            <h1>Memory not found</h1>
 
             <p>
-              It may have been deleted or you may not have permission to view
-              it.
+              This memory may have been deleted or you
+              may not have permission to view it.
             </p>
 
-            <Link href="/memories" className="back-button">
-              ← Back to memories
+            <Link
+              href="/memories"
+              className="primary-button"
+            >
+              Back to memories
             </Link>
           </div>
-        </main>
 
-        <PageStyles />
-      </>
-    );
+        </div>
+      );
   }
 
   return (
-    <>
-      <Sidebar />
+      <div className="detail-page">
 
-      <main className="memory-page">
-        <header className="topbar">
-          <div>
-            <p className="eyebrow">PERSONAL MEMORY</p>
-            <h1>Memory</h1>
-          </div>
+        {/* BACK */}
 
-          <Link href="/capture" className="capture-button">
-            <span>＋</span>
-            Capture memory
-          </Link>
-        </header>
+        <Link
+          href="/memories"
+          className="back-link"
+        >
+          ← Back to memories
+        </Link>
 
-        <section className="hero">
-          <div className="hero-content">
-            <p className="hero-label">
-              {getSourceLabel(memory.source_type)}
-            </p>
+        {/* MAIN CARD */}
 
-            <h2>
-              {memory.title}
-              <span>saved in your memory space.</span>
-            </h2>
+        <div className="detail-card">
 
-            <p className="hero-description">
-              Everything you saved about this memory, kept in one place so you
-              can find it again when you need it.
-            </p>
+          {/* TOP */}
 
-            <div className="hero-meta">
-              <span>Saved {formatDate(memory.created_at)}</span>
+          <div className="detail-header">
 
-              {memory.category && (
-                <>
-                  <i />
-                  <span>{memory.category}</span>
-                </>
-              )}
-            </div>
-          </div>
+            <div>
 
-          <div className="orbit">
-            <div className="orbit-ring ring-one" />
-            <div className="orbit-ring ring-two" />
-            <div className="orbit-ring ring-three" />
+              <div className="top-meta">
 
-            <div className="orbit-center">
-              {getInitial(memory.title)}
-            </div>
-
-            <div className="orbit-dot dot-one" />
-            <div className="orbit-dot dot-two" />
-            <div className="orbit-dot dot-three" />
-          </div>
-        </section>
-
-        <div className="action-row">
-          <button
-            className={`action-button ${
-              memory.is_favorite ? "favorite-active" : ""
-            }`}
-            onClick={toggleFavorite}
-            disabled={favoriteLoading}
-          >
-            <span>{memory.is_favorite ? "★" : "☆"}</span>
-            {memory.is_favorite
-              ? "Favorited"
-              : "Add to favorites"}
-          </button>
-
-          <button
-            className="action-button danger"
-            onClick={deleteMemory}
-            disabled={deleting}
-          >
-            <span>⌫</span>
-            {deleting ? "Deleting..." : "Delete memory"}
-          </button>
-        </div>
-
-        <section className="details-layout">
-          <div className="main-column">
-            {memory.summary && (
-              <section className="section-block">
-                <div className="section-heading">
-                  <p className="eyebrow">SUMMARY</p>
-                  <h3>What you remembered</h3>
-                </div>
-
-                <div className="white-card summary-card">
-                  <p>{memory.summary}</p>
-                </div>
-              </section>
-            )}
-
-            {memory.content && (
-              <section className="section-block">
-                <div className="section-heading">
-                  <p className="eyebrow">CONTENT</p>
-                  <h3>Saved information</h3>
-                </div>
-
-                <div className="white-card content-card">
-                  <div className="content-text">
-                    {memory.content}
-                  </div>
-                </div>
-              </section>
-            )}
-
-            {asset && assetUrl && (
-              <section className="section-block">
-                <div className="section-heading">
-                  <p className="eyebrow">ORIGINAL SOURCE</p>
-                  <h3>Attached file</h3>
-                </div>
-
-                <div className="white-card asset-card">
-                  <div className="asset-header">
-                    <div className="asset-icon">
-                      {asset.mime_type?.startsWith("image/")
-                        ? "▧"
-                        : asset.mime_type === "application/pdf"
-                        ? "PDF"
-                        : "FILE"}
-                    </div>
-
-                    <div className="asset-info">
-                      <strong>
-                        {asset.file_name || "Attached file"}
-                      </strong>
-
-                      <span>
-                        {formatFileSize(asset.file_size)}
-                        {asset.mime_type
-                          ? ` · ${asset.mime_type}`
-                          : ""}
-                      </span>
-                    </div>
-
-                    <a
-                      href={assetUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="open-file"
-                    >
-                      Open
-                    </a>
-                  </div>
-
-                  {asset.mime_type?.startsWith("image/") && (
-                    <div className="image-preview">
-                      <img
-                        src={assetUrl}
-                        alt={
-                          asset.file_name ||
-                          "Memory attachment"
-                        }
-                      />
-                    </div>
+                <span
+                  className={`source-badge ${getSourceClass(
+                    memory.source_type
+                  )}`}
+                >
+                  {getSourceIcon(
+                    memory.source_type
                   )}
 
-                  {asset.mime_type === "application/pdf" && (
-                    <div className="pdf-preview">
-                      <iframe
-                        src={assetUrl}
-                        title={
-                          asset.file_name ||
-                          "PDF preview"
-                        }
-                      />
-                    </div>
-                  )}
-                </div>
-              </section>
-            )}
+                  {memory.source_type}
+                </span>
 
-            {memory.source_url && (
-              <section className="section-block">
-                <div className="section-heading">
-                  <p className="eyebrow">SOURCE</p>
-                  <h3>Original website</h3>
-                </div>
+                <span className="category-badge">
+                  {memory.category || "Other"}
+                </span>
 
-                <div className="white-card source-card">
-                  <div className="source-symbol">↗</div>
-
-                  <div className="source-details">
-                    <span>Original link</span>
-                    <strong>{memory.source_url}</strong>
-                  </div>
-
-                  <a
-                    href={memory.source_url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="open-file"
-                  >
-                    Visit
-                  </a>
-                </div>
-              </section>
-            )}
-          </div>
-
-          <aside className="side-column">
-            <section className="white-card info-card">
-              <p className="eyebrow">MEMORY DETAILS</p>
-
-              <div className="info-list">
-                <div className="info-item">
-                  <span>Source</span>
-                  <strong>
-                    {getSourceLabel(memory.source_type)}
-                  </strong>
-                </div>
-
-                <div className="info-item">
-                  <span>Category</span>
-                  <strong>
-                    {memory.category || "Other"}
-                  </strong>
-                </div>
-
-                <div className="info-item">
-                  <span>Saved</span>
-                  <strong>
-                    {formatDate(memory.created_at)}
-                  </strong>
-                </div>
-
-                <div className="info-item">
-                  <span>Updated</span>
-                  <strong>
-                    {formatDate(memory.updated_at)}
-                  </strong>
-                </div>
-
-                <div className="info-item">
-                  <span>Favorite</span>
-                  <strong>
-                    {memory.is_favorite ? "Yes" : "No"}
-                  </strong>
-                </div>
               </div>
+
+              <h1>{memory.title}</h1>
+
+              <p className="saved-text">
+                Saved{" "}
+                {formatDate(memory.created_at)}
+              </p>
+
+            </div>
+
+            <div
+              className={`favorite ${
+                memory.is_favorite
+                  ? "active"
+                  : ""
+              }`}
+            >
+              <StarIcon
+                filled={memory.is_favorite}
+              />
+
+              {memory.is_favorite
+                ? "Important"
+                : "Saved memory"}
+            </div>
+
+          </div>
+
+          <div className="divider" />
+
+          {/* SUMMARY */}
+
+          {memory.summary && (
+            <section className="content-section">
+
+              <h2>Summary</h2>
+
+              <p className="summary">
+                {memory.summary}
+              </p>
+
             </section>
+          )}
 
-            {memory.deadline && (
-              <section className="white-card deadline-card">
-                <p className="eyebrow">DEADLINE</p>
+          {/* CONTENT */}
 
-                <div className="deadline-value">
-                  {formatDate(memory.deadline)}
-                </div>
+          {memory.content && (
+            <section className="content-section">
 
-                <p>
-                  This memory has a deadline attached to it.
-                </p>
-              </section>
-            )}
+              <h2>Captured content</h2>
 
-            <section className="white-card tip-card">
-              <div className="tip-mark">T</div>
+              <div className="content-box">
+                {memory.content}
+              </div>
+
+            </section>
+          )}
+
+          {/* INFORMATION */}
+
+          <section className="content-section">
+
+            <h2>Information</h2>
+
+            <div className="info-grid">
+
+              <InfoItem
+                label="Category"
+                value={
+                  memory.category || "Other"
+                }
+              />
+
+              <InfoItem
+                label="Source"
+                value={
+                  memory.source_type
+                }
+              />
+
+              <InfoItem
+                label="Saved"
+                value={formatDate(
+                  memory.created_at
+                )}
+              />
+
+              <InfoItem
+                label="Deadline"
+                value={
+                  memory.deadline
+                    ? formatDate(
+                        memory.deadline
+                      )
+                    : "No deadline"
+                }
+                danger={
+                  !!memory.deadline
+                }
+              />
+
+            </div>
+
+          </section>
+
+          {/* DEADLINE */}
+
+          {memory.deadline && (
+            <section className="deadline-box">
+
+              <div className="deadline-icon">
+                <CalendarIcon />
+              </div>
 
               <div>
-                <p className="eyebrow">TRACEMIND TIP</p>
-
-                <h4>Keep the context.</h4>
+                <strong>
+                  Deadline
+                </strong>
 
                 <p>
-                  Saving the original source with a memory makes
-                  it much easier to understand and find again later.
+                  {formatDate(
+                    memory.deadline
+                  )}
                 </p>
               </div>
+
             </section>
+          )}
 
-            <Link href="/memories" className="back-link">
-              ← Back to all memories
+          {/* SOURCE */}
+
+          <section className="content-section">
+
+            <h2>Original source</h2>
+
+            {memory.source_url ? (
+              <a
+                href={memory.source_url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="source-card"
+              >
+                <div className="source-card-icon">
+                  <ExternalIcon />
+                </div>
+
+                <div>
+                  <strong>
+                    Open original source
+                  </strong>
+
+                  <span>
+                    View the website or
+                    original link
+                  </span>
+                </div>
+
+                <ExternalIcon />
+              </a>
+            ) : (
+              <div className="no-source">
+                <FileIcon />
+
+                <div>
+                  <strong>
+                    No external source
+                  </strong>
+
+                  <span>
+                    This memory was captured
+                    without an original URL.
+                  </span>
+                </div>
+              </div>
+            )}
+
+          </section>
+
+          {/* ACTIONS */}
+
+          <div className="actions">
+
+            <Link
+              href="/memories"
+              className="secondary-button"
+            >
+              ← Back
             </Link>
-          </aside>
-        </section>
-      </main>
 
-      <PageStyles />
-    </>
-  );
-}
+            <form action={deleteMemory}>
+              <button type="submit" className="danger-button">
+                Delete memory
+              </button>
+            </form>
 
-function PageStyles() {
-  return (
-    <style jsx global>{`
-      * {
-        box-sizing: border-box;
-      }
+          </div>
 
-      html,
-      body {
-        margin: 0;
-        padding: 0;
-      }
+        </div>
 
-      body {
-        background: #f7f8fa;
-        color: #17191e;
-        font-family:
-          Inter,
-          ui-sans-serif,
-          system-ui,
-          -apple-system,
-          BlinkMacSystemFont,
-          "Segoe UI",
-          sans-serif;
-      }
+      </div>
 
-      .memory-page {
-        width: calc(100% - 238px);
-        min-height: 100vh;
-        margin-left: 238px;
-        padding: 34px 46px 70px;
-      }
+      <style>{`
 
-      .topbar {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        gap: 20px;
-        margin-bottom: 28px;
-      }
-
-      .eyebrow {
-        margin: 0 0 7px;
-        color: #a1a4aa;
-        font-size: 10px;
-        font-weight: 800;
-        letter-spacing: 1.5px;
-        text-transform: uppercase;
-      }
-
-      .topbar h1 {
-        margin: 0;
-        font-size: 28px;
-        line-height: 1;
-        letter-spacing: -1px;
-      }
-
-      .capture-button {
-        display: inline-flex;
-        align-items: center;
-        gap: 8px;
-        background: #17191e;
-        color: #ffffff;
-        text-decoration: none;
-        border-radius: 10px;
-        padding: 11px 15px;
-        font-size: 12px;
-        font-weight: 700;
-        transition: 0.2s ease;
-      }
-
-      .capture-button:hover {
-        background: #292c33;
-        transform: translateY(-1px);
-      }
-
-      .capture-button span {
-        font-size: 16px;
-      }
-
-      .hero {
-        position: relative;
-        min-height: 340px;
-        overflow: hidden;
-        border-radius: 22px;
-        background: #17191e;
-        color: #ffffff;
-        padding: 48px;
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        margin-bottom: 20px;
-      }
-
-      .hero-content {
-        position: relative;
-        z-index: 2;
-        max-width: 700px;
-      }
-
-      .hero-label {
-        margin: 0 0 18px;
-        color: #9ea2aa;
-        font-size: 10px;
-        font-weight: 800;
-        letter-spacing: 1.7px;
-        text-transform: uppercase;
-      }
-
-      .hero h2 {
-        max-width: 720px;
-        margin: 0;
-        font-size: clamp(38px, 5vw, 67px);
-        line-height: 0.98;
-        letter-spacing: -3.5px;
-        font-weight: 750;
-      }
-
-      .hero h2 span {
-        display: block;
-        color: #70747d;
-      }
-
-      .hero-description {
-        max-width: 580px;
-        margin: 25px 0 0;
-        color: #aeb2ba;
-        font-size: 14px;
-        line-height: 1.7;
-      }
-
-      .hero-meta {
-        display: flex;
-        align-items: center;
-        flex-wrap: wrap;
-        gap: 10px;
-        margin-top: 24px;
-        color: #858992;
-        font-size: 11px;
-        font-weight: 600;
-      }
-
-      .hero-meta i {
-        width: 4px;
-        height: 4px;
-        border-radius: 50%;
-        background: #5e626a;
-      }
-
-      .orbit {
-        position: absolute;
-        right: 30px;
-        top: 50%;
-        width: 330px;
-        height: 330px;
-        transform: translateY(-50%);
-      }
-
-      .orbit-ring {
-        position: absolute;
-        border: 1px solid rgba(255, 255, 255, 0.1);
-        border-radius: 50%;
-      }
-
-      .ring-one {
-        width: 180px;
-        height: 180px;
-        left: 75px;
-        top: 75px;
-      }
-
-      .ring-two {
-        width: 260px;
-        height: 260px;
-        left: 35px;
-        top: 35px;
-      }
-
-      .ring-three {
-        width: 325px;
-        height: 325px;
-        left: 2px;
-        top: 2px;
-      }
-
-      .orbit-center {
-        position: absolute;
-        left: 50%;
-        top: 50%;
-        width: 72px;
-        height: 72px;
-        transform: translate(-50%, -50%);
-        border-radius: 50%;
-        display: grid;
-        place-items: center;
-        background: #ffffff;
-        color: #17191e;
-        font-size: 24px;
-        font-weight: 800;
-      }
-
-      .orbit-dot {
-        position: absolute;
-        width: 9px;
-        height: 9px;
-        border-radius: 50%;
-        background: #ffffff;
-      }
-
-      .dot-one {
-        top: 30px;
-        left: 158px;
-      }
-
-      .dot-two {
-        right: 26px;
-        top: 154px;
-      }
-
-      .dot-three {
-        bottom: 32px;
-        left: 70px;
-      }
-
-      .action-row {
-        display: flex;
-        gap: 9px;
-        margin-bottom: 38px;
-      }
-
-      .action-button {
-        border: 1px solid #e1e3e7;
-        background: #ffffff;
-        color: #565a62;
-        border-radius: 10px;
-        padding: 10px 14px;
-        font-size: 12px;
-        font-weight: 700;
-        cursor: pointer;
-        transition: 0.2s ease;
-      }
-
-      .action-button:hover {
-        border-color: #cfd2d7;
-        color: #17191e;
-      }
-
-      .action-button:disabled {
-        opacity: 0.55;
-        cursor: not-allowed;
-      }
-
-      .action-button span {
-        margin-right: 7px;
-        font-size: 14px;
-      }
-
-      .favorite-active {
-        background: #17191e;
-        color: #ffffff;
-        border-color: #17191e;
-      }
-
-      .details-layout {
-        display: grid;
-        grid-template-columns: minmax(0, 1fr) 310px;
-        gap: 28px;
-        align-items: start;
-      }
-
-      .main-column {
-        min-width: 0;
-      }
-
-      .section-block {
-        margin-bottom: 38px;
-      }
-
-      .section-heading {
-        margin-bottom: 14px;
-      }
-
-      .section-heading h3 {
-        margin: 0;
-        font-size: 22px;
-        letter-spacing: -0.7px;
-      }
-
-      .white-card {
-        background: #ffffff;
-        border: 1px solid #e7e8eb;
-        border-radius: 15px;
-      }
-
-      .summary-card {
-        padding: 24px;
-      }
-
-      .summary-card p {
-        margin: 0;
-        color: #555962;
-        font-size: 15px;
-        line-height: 1.8;
-      }
-
-      .content-card {
-        padding: 25px;
-      }
-
-      .content-text {
-        white-space: pre-wrap;
-        color: #4d5159;
-        font-size: 14px;
-        line-height: 1.85;
-      }
-
-      .asset-card {
-        overflow: hidden;
-      }
-
-      .asset-header {
-        display: flex;
-        align-items: center;
-        gap: 13px;
-        padding: 17px;
-      }
-
-      .asset-icon {
-        width: 40px;
-        height: 40px;
-        flex-shrink: 0;
-        border-radius: 10px;
-        background: #f0f1f3;
-        display: grid;
-        place-items: center;
-        color: #17191e;
-        font-size: 10px;
-        font-weight: 800;
-      }
-
-      .asset-info {
-        min-width: 0;
-        flex: 1;
-      }
-
-      .asset-info strong {
-        display: block;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-        font-size: 13px;
-      }
-
-      .asset-info span {
-        display: block;
-        margin-top: 4px;
-        color: #999ca2;
-        font-size: 10px;
-      }
-
-      .open-file {
-        flex-shrink: 0;
-        color: #17191e;
-        text-decoration: none;
-        border: 1px solid #dfe1e5;
-        border-radius: 8px;
-        padding: 8px 11px;
-        font-size: 11px;
-        font-weight: 700;
-      }
-
-      .open-file:hover {
-        background: #f5f6f7;
-      }
-
-      .image-preview {
-        border-top: 1px solid #ececef;
-        background: #f5f6f7;
-        padding: 20px;
-        text-align: center;
-      }
-
-      .image-preview img {
-        max-width: 100%;
-        max-height: 700px;
-        border-radius: 9px;
-        object-fit: contain;
-      }
-
-      .pdf-preview {
-        border-top: 1px solid #ececef;
-        background: #f4f5f6;
-        padding: 14px;
-      }
-
-      .pdf-preview iframe {
-        width: 100%;
-        height: 650px;
-        display: block;
-        border: 0;
-        border-radius: 8px;
-        background: #ffffff;
-      }
-
-      .source-card {
-        display: flex;
-        align-items: center;
-        gap: 14px;
-        padding: 17px;
-      }
-
-      .source-symbol {
-        width: 40px;
-        height: 40px;
-        flex-shrink: 0;
-        border-radius: 10px;
-        background: #f0f1f3;
-        display: grid;
-        place-items: center;
-        font-size: 18px;
-      }
-
-      .source-details {
-        min-width: 0;
-        flex: 1;
-      }
-
-      .source-details span {
-        display: block;
-        color: #999ca2;
-        font-size: 10px;
-        margin-bottom: 4px;
-      }
-
-      .source-details strong {
-        display: block;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-        font-size: 12px;
-        font-weight: 650;
-      }
-
-      .side-column {
-        display: flex;
-        flex-direction: column;
-        gap: 15px;
-      }
-
-      .info-card {
-        padding: 22px;
-      }
-
-      .info-list {
-        margin-top: 18px;
-      }
-
-      .info-item {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        gap: 15px;
-        padding: 13px 0;
-        border-top: 1px solid #ececef;
-      }
-
-      .info-item span {
-        color: #999ca2;
-        font-size: 11px;
-      }
-
-      .info-item strong {
-        text-align: right;
-        font-size: 11px;
-        font-weight: 700;
-      }
-
-      .deadline-card {
-        padding: 22px;
-      }
-
-      .deadline-value {
-        margin-top: 12px;
-        font-size: 20px;
-        font-weight: 750;
-        letter-spacing: -0.5px;
-      }
-
-      .deadline-card p:last-child {
-        margin: 8px 0 0;
-        color: #999ca2;
-        font-size: 11px;
-        line-height: 1.6;
-      }
-
-      .tip-card {
-        display: flex;
-        gap: 13px;
-        padding: 20px;
-      }
-
-      .tip-mark {
-        width: 34px;
-        height: 34px;
-        flex-shrink: 0;
-        border-radius: 9px;
-        background: #17191e;
-        color: #ffffff;
-        display: grid;
-        place-items: center;
-        font-size: 12px;
-        font-weight: 800;
-      }
-
-      .tip-card h4 {
-        margin: 0 0 7px;
-        font-size: 14px;
-      }
-
-      .tip-card p:last-child {
-        margin: 0;
-        color: #8b8e95;
-        font-size: 11px;
-        line-height: 1.65;
-      }
-
-      .back-link {
-        color: #777b83;
-        text-decoration: none;
-        font-size: 12px;
-        font-weight: 700;
-      }
-
-      .back-link:hover {
-        color: #17191e;
-      }
-
-      .loading-screen {
-        min-height: 70vh;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        flex-direction: column;
-        gap: 12px;
-        color: #888c94;
-      }
-
-      .loading-screen p {
-        margin: 0;
-        font-size: 13px;
-      }
-
-      .loading-spinner {
-        width: 25px;
-        height: 25px;
-        border: 3px solid #e2e3e6;
-        border-top-color: #17191e;
-        border-radius: 50%;
-        animation: spin 0.8s linear infinite;
-      }
-
-      @keyframes spin {
-        to {
-          transform: rotate(360deg);
-        }
-      }
-
-      .not-found {
-        min-height: 70vh;
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        justify-content: center;
-        text-align: center;
-      }
-
-      .not-found-icon {
-        width: 52px;
-        height: 52px;
-        border-radius: 50%;
-        background: #17191e;
-        color: #ffffff;
-        display: grid;
-        place-items: center;
-        font-weight: 800;
-        margin-bottom: 20px;
-      }
-
-      .not-found h1 {
-        margin: 0;
-        font-size: 30px;
-        letter-spacing: -1px;
-      }
-
-      .not-found > p:not(.eyebrow) {
-        max-width: 420px;
-        margin: 12px 0 22px;
-        color: #858991;
-        font-size: 13px;
-        line-height: 1.7;
-      }
-
-      .back-button {
-        background: #17191e;
-        color: #ffffff;
-        text-decoration: none;
-        border-radius: 10px;
-        padding: 11px 15px;
-        font-size: 12px;
-        font-weight: 700;
-      }
-
-      @media (max-width: 1100px) {
-        .details-layout {
-          grid-template-columns: 1fr;
+        .detail-page {
+          max-width: 900px;
+          margin: 0 auto;
+          padding: 32px 28px 60px;
         }
 
-        .side-column {
-          display: grid;
-          grid-template-columns: repeat(2, minmax(0, 1fr));
+        .back-link {
+          display: inline-flex;
+          align-items: center;
+          margin-bottom: 16px;
+          color: #64748b;
+          font-size: 12px;
+          font-weight: 650;
+          text-decoration: none;
         }
 
-        .orbit {
-          opacity: 0.5;
-          right: -30px;
-        }
-      }
-
-      @media (max-width: 900px) {
-        .memory-page {
-          width: calc(100% - 76px);
-          margin-left: 76px;
+        .back-link:hover {
+          color: #2563eb;
         }
 
-        .hero {
-          padding: 38px;
+        .detail-card {
+          padding: 25px;
+          border: 1px solid #e5e7eb;
+          border-radius: 16px;
+          background: white;
+          box-shadow:
+            0 7px 25px
+            rgba(15, 23, 42, 0.045);
         }
 
-        .hero h2 {
-          font-size: 48px;
-        }
-      }
-
-      @media (max-width: 700px) {
-        .memory-page {
-          padding: 25px 20px 50px;
-        }
-
-        .topbar {
+        .detail-header {
+          display: flex;
+          justify-content: space-between;
           align-items: flex-start;
+          gap: 20px;
         }
 
-        .capture-button {
-          padding: 10px 11px;
+        .top-meta {
+          display: flex;
+          align-items: center;
+          gap: 7px;
+          margin-bottom: 10px;
         }
 
-        .capture-button span {
-          display: none;
+        .source-badge,
+        .category-badge {
+          display: inline-flex;
+          align-items: center;
+          gap: 5px;
+          padding: 5px 8px;
+          border-radius: 6px;
+          font-size: 9px;
+          font-weight: 750;
         }
 
-        .hero {
-          min-height: 350px;
-          padding: 30px;
+        .source-badge svg {
+          width: 11px;
+          height: 11px;
         }
 
-        .hero h2 {
-          font-size: 39px;
-          letter-spacing: -2px;
+        .category-badge {
+          color: #475569;
+          background: #f1f5f9;
         }
 
-        .orbit {
-          opacity: 0.18;
-          right: -100px;
+        .source-screenshot {
+          color: #7c3aed;
+          background: #f5f3ff;
         }
 
-        .side-column {
-          grid-template-columns: 1fr;
-        }
-      }
-
-      @media (max-width: 650px) {
-        .memory-page {
-          width: calc(100% - 68px);
-          margin-left: 68px;
-          padding: 22px 15px 50px;
+        .source-pdf {
+          color: #dc2626;
+          background: #fef2f2;
         }
 
-        .hero {
-          border-radius: 17px;
-          padding: 26px;
+        .source-website,
+        .source-link {
+          color: #2563eb;
+          background: #eff6ff;
         }
 
-        .hero h2 {
-          font-size: 34px;
+        .source-text {
+          color: #059669;
+          background: #ecfdf5;
         }
 
-        .action-row {
-          flex-wrap: wrap;
+        .source-voice {
+          color: #ea580c;
+          background: #fff7ed;
         }
 
-        .action-button {
-          flex: 1;
-          min-width: 150px;
+        .source-other {
+          color: #475569;
+          background: #f1f5f9;
         }
-      }
-    `}</style>
+
+        .detail-header h1 {
+          margin: 0;
+          color: #0f172a;
+          font-size: 27px;
+          line-height: 1.25;
+          letter-spacing: -0.03em;
+        }
+
+        .saved-text {
+          margin: 7px 0 0;
+          color: #94a3b8;
+          font-size: 10px;
+        }
+
+        .favorite {
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+          padding: 7px 9px;
+          border-radius: 7px;
+          color: #64748b;
+          background: #f8fafc;
+          font-size: 10px;
+          font-weight: 700;
+          white-space: nowrap;
+        }
+
+        .favorite.active {
+          color: #b45309;
+          background: #fffbeb;
+        }
+
+        .favorite svg {
+          width: 14px;
+          height: 14px;
+        }
+
+        .divider {
+          height: 1px;
+          margin: 21px 0;
+          background: #eef2f7;
+        }
+
+        .content-section {
+          margin-top: 22px;
+        }
+
+        .content-section h2 {
+          margin: 0 0 8px;
+          color: #334155;
+          font-size: 12px;
+          font-weight: 800;
+        }
+
+        .summary {
+          margin: 0;
+          color: #64748b;
+          font-size: 12px;
+          line-height: 1.7;
+        }
+
+        .content-box {
+          padding: 13px;
+          border: 1px solid #e2e8f0;
+          border-radius: 9px;
+          color: #475569;
+          background: #f8fafc;
+          white-space: pre-wrap;
+          font-size: 11px;
+          line-height: 1.65;
+        }
+
+        .info-grid {
+          display: grid;
+          grid-template-columns:
+            repeat(4, minmax(0, 1fr));
+          gap: 9px;
+        }
+
+        .info-item {
+          padding: 11px;
+          border-radius: 9px;
+          background: #f8fafc;
+        }
+
+        .info-item span {
+          display: block;
+          color: #94a3b8;
+          font-size: 9px;
+        }
+
+        .info-item strong {
+          display: block;
+          margin-top: 4px;
+          color: #334155;
+          font-size: 11px;
+        }
+
+        .info-item strong.danger {
+          color: #dc2626;
+        }
+
+        .deadline-box {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          margin-top: 18px;
+          padding: 12px;
+          border: 1px solid #fde68a;
+          border-radius: 9px;
+          background: #fffbeb;
+        }
+
+        .deadline-icon {
+          width: 31px;
+          height: 31px;
+          display: grid;
+          place-items: center;
+          border-radius: 8px;
+          color: #b45309;
+          background: #fef3c7;
+        }
+
+        .deadline-icon svg {
+          width: 15px;
+          height: 15px;
+        }
+
+        .deadline-box strong {
+          display: block;
+          color: #92400e;
+          font-size: 11px;
+        }
+
+        .deadline-box p {
+          margin: 2px 0 0;
+          color: #b45309;
+          font-size: 10px;
+        }
+
+        .source-card,
+        .no-source {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          padding: 12px;
+          border: 1px solid #e2e8f0;
+          border-radius: 9px;
+          text-decoration: none;
+          background: #f8fafc;
+        }
+
+        .source-card:hover {
+          border-color: #bfdbfe;
+          background: #eff6ff;
+        }
+
+        .source-card-icon {
+          width: 31px;
+          height: 31px;
+          display: grid;
+          place-items: center;
+          border-radius: 8px;
+          color: #2563eb;
+          background: #dbeafe;
+        }
+
+        .source-card-icon svg,
+        .source-card > svg {
+          width: 14px;
+          height: 14px;
+        }
+
+        .source-card > svg {
+          margin-left: auto;
+          color: #94a3b8;
+        }
+
+        .source-card strong,
+        .no-source strong {
+          display: block;
+          color: #334155;
+          font-size: 11px;
+        }
+
+        .source-card span,
+        .no-source span {
+          display: block;
+          margin-top: 2px;
+          color: #94a3b8;
+          font-size: 9px;
+        }
+
+        .no-source {
+          color: #94a3b8;
+        }
+
+        .no-source > svg {
+          width: 20px;
+          height: 20px;
+        }
+
+        .actions {
+          display: flex;
+          justify-content: flex-end;
+          gap: 8px;
+          margin-top: 25px;
+          padding-top: 17px;
+          border-top: 1px solid #eef2f7;
+        }
+
+        .primary-button,
+        .secondary-button,
+        .delete-button {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          height: 35px;
+          padding: 0 12px;
+          border-radius: 8px;
+          font-size: 10px;
+          font-weight: 750;
+          text-decoration: none;
+          cursor: pointer;
+        }
+
+        .primary-button {
+          color: white;
+          background: #2563eb;
+        }
+
+        .secondary-button {
+          color: #475569;
+          background: white;
+          border: 1px solid #dbe2ea;
+        }
+
+        .delete-button {
+          color: #dc2626;
+          background: #fef2f2;
+          border: 1px solid #fecaca;
+        }
+
+        .error-box,
+        .not-found {
+          padding: 40px 25px;
+          text-align: center;
+          border: 1px solid #e5e7eb;
+          border-radius: 15px;
+          background: white;
+        }
+
+        .error-box h2,
+        .not-found h1 {
+          margin: 0;
+          color: #0f172a;
+          font-size: 20px;
+        }
+
+        .error-box p,
+        .not-found p {
+          margin: 7px 0 17px;
+          color: #64748b;
+          font-size: 12px;
+        }
+
+        .not-found-icon {
+          width: 50px;
+          height: 50px;
+          display: grid;
+          place-items: center;
+          margin: 0 auto 13px;
+          border-radius: 13px;
+          color: #2563eb;
+          background: #eff6ff;
+        }
+
+        .not-found-icon svg {
+          width: 22px;
+          height: 22px;
+        }
+
+        @media (max-width: 760px) {
+          .detail-page {
+            padding: 25px 17px 50px;
+          }
+
+          .detail-card {
+            padding: 19px;
+          }
+
+          .detail-header {
+            flex-direction: column;
+          }
+
+          .info-grid {
+            grid-template-columns: repeat(2, 1fr);
+          }
+        }
+
+        @media (max-width: 480px) {
+          .detail-header h1 {
+            font-size: 23px;
+          }
+
+          .info-grid {
+            grid-template-columns: 1fr;
+          }
+
+          .actions {
+            justify-content: stretch;
+          }
+
+          .actions > * {
+            flex: 1;
+          }
+        }
+
+      `}</style>
   );
 }
 
+/* =========================================================
+   INFO ITEM
+========================================================= */
+
+function InfoItem({
+  label,
+  value,
+  danger,
+}: {
+  label: string;
+  value: string;
+  danger?: boolean;
+}) {
+  return (
+    <div className="info-item">
+      <span>{label}</span>
+
+      <strong className={danger ? "danger" : ""}>
+        {value}
+      </strong>
+    </div>
+  );
+}
+
+/* =========================================================
+   HELPERS
+========================================================= */
+
+function formatDate(date: string) {
+  return new Date(date).toLocaleDateString(
+    "en-IN",
+    {
+      day: "numeric",
+      month: "short",
+      year: "numeric",
+    }
+  );
+}
+
+function getSourceClass(source: string) {
+  const value = source.toLowerCase();
+
+  if (value.includes("screenshot"))
+    return "source-screenshot";
+
+  if (value.includes("pdf"))
+    return "source-pdf";
+
+  if (value.includes("website"))
+    return "source-website";
+
+  if (value.includes("link"))
+    return "source-link";
+
+  if (value.includes("text"))
+    return "source-text";
+
+  if (value.includes("voice"))
+    return "source-voice";
+
+  return "source-other";
+}
+
+function getSourceIcon(source: string) {
+  const value = source.toLowerCase();
+
+  if (value.includes("pdf"))
+    return <FileIcon />;
+
+  if (
+    value.includes("website") ||
+    value.includes("link")
+  )
+    return <GlobeIcon />;
+
+  if (value.includes("voice"))
+    return <MicIcon />;
+
+  if (value.includes("screenshot"))
+    return <ImageIcon />;
+
+  return <FileIcon />;
+}
+
+/* =========================================================
+   ICONS
+========================================================= */
+
+function StarIcon({
+  filled = false,
+}: {
+  filled?: boolean;
+}) {
+  return (
+    <svg viewBox="0 0 24 24">
+      <path
+        d="m12 3 2.8 5.7 6.2.9-4.5 4.4 1.1 6.2-5.6-3-5.6 3 1.1-6.2L3 9.6l6.2-.9L12 3z"
+        fill={
+          filled
+            ? "currentColor"
+            : "none"
+        }
+        stroke="currentColor"
+        strokeWidth="1.7"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+function CalendarIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none">
+      <rect
+        x="3"
+        y="5"
+        width="18"
+        height="16"
+        rx="2"
+        stroke="currentColor"
+        strokeWidth="1.7"
+      />
+
+      <path
+        d="M7 3v4M17 3v4M3 10h18"
+        stroke="currentColor"
+        strokeWidth="1.7"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
+function ExternalIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none">
+      <path
+        d="M14 5h5v5M19 5l-8 8"
+        stroke="currentColor"
+        strokeWidth="1.7"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+
+      <path
+        d="M19 13v5a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1h5"
+        stroke="currentColor"
+        strokeWidth="1.7"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
+function FileIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none">
+      <path
+        d="M6 3h8l4 4v14H6z"
+        stroke="currentColor"
+        strokeWidth="1.7"
+        strokeLinejoin="round"
+      />
+
+      <path
+        d="M14 3v5h4"
+        stroke="currentColor"
+        strokeWidth="1.7"
+      />
+    </svg>
+  );
+}
+
+function GlobeIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none">
+      <circle
+        cx="12"
+        cy="12"
+        r="9"
+        stroke="currentColor"
+        strokeWidth="1.7"
+      />
+
+      <path
+        d="M3 12h18M12 3c3 3 3 15 0 18M12 3c-3 3-3 15 0 18"
+        stroke="currentColor"
+        strokeWidth="1.5"
+      />
+    </svg>
+  );
+}
+
+function MicIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none">
+      <rect
+        x="9"
+        y="3"
+        width="6"
+        height="12"
+        rx="3"
+        stroke="currentColor"
+        strokeWidth="1.7"
+      />
+
+      <path
+        d="M5 11a7 7 0 0 0 14 0M12 18v3M8 21h8"
+        stroke="currentColor"
+        strokeWidth="1.7"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
+function ImageIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none">
+      <rect
+        x="3"
+        y="4"
+        width="18"
+        height="16"
+        rx="2"
+        stroke="currentColor"
+        strokeWidth="1.7"
+      />
+
+      <circle
+        cx="8"
+        cy="9"
+        r="1.5"
+        stroke="currentColor"
+        strokeWidth="1.5"
+      />
+
+      <path
+        d="m4 17 5-5 3 3 2-2 6 5"
+        stroke="currentColor"
+        strokeWidth="1.7"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}

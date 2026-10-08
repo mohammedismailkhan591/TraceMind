@@ -1,8 +1,7 @@
 "use client";
 
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { useEffect, useState } from "react";
-import Logo from "../../components/Logo";
 import { createClient } from "../../lib/supabase";
 
 type Memory = {
@@ -11,28 +10,46 @@ type Memory = {
   summary: string | null;
   category: string | null;
   source_type: string;
+  source_url: string | null;
   created_at: string;
   deadline: string | null;
   is_favorite: boolean;
 };
 
-export default function SearchPage() {
-  const supabase = createClient();
+const categories = [
+  "All",
+  "Tech",
+  "Hackathons",
+  "Scholarships",
+  "Jobs",
+  "Events",
+  "Messages",
+  "Non-Tech",
+  "Other",
+];
 
+export default function SearchPage() {
   const [memories, setMemories] = useState<Memory[]>([]);
   const [query, setQuery] = useState("");
+  const [category, setCategory] = useState("All");
+  const [favoritesOnly, setFavoritesOnly] = useState(false);
   const [loading, setLoading] = useState(true);
+
+  const supabase = useMemo(() => createClient(), []);
 
   useEffect(() => {
     loadMemories();
   }, []);
 
   async function loadMemories() {
+    setLoading(true);
+
     const {
       data: { user },
     } = await supabase.auth.getUser();
 
     if (!user) {
+      setMemories([]);
       setLoading(false);
       return;
     }
@@ -40,782 +57,622 @@ export default function SearchPage() {
     const { data, error } = await supabase
       .from("memories")
       .select(
-        "id,title,summary,category,source_type,created_at,deadline,is_favorite"
+        "id,title,summary,category,source_type,source_url,created_at,deadline,is_favorite"
       )
       .eq("user_id", user.id)
       .order("created_at", { ascending: false });
 
-    if (!error) {
-      setMemories(data || []);
+    if (!error && data) {
+      setMemories(data);
     }
 
     setLoading(false);
   }
 
-  const filteredMemories = memories.filter((memory) => {
-    const text = `
-      ${memory.title}
-      ${memory.summary || ""}
-      ${memory.category || ""}
-      ${memory.source_type}
-    `.toLowerCase();
+  const results = useMemo(() => {
+    const search = query.trim().toLowerCase();
 
-    return text.includes(query.toLowerCase());
-  });
+    return memories.filter((memory) => {
+      const searchableText = [
+        memory.title,
+        memory.summary,
+        memory.category,
+        memory.source_type,
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
 
-  const sourceIcon = (type: string) => {
-    const value = type.toLowerCase();
+      const matchesSearch =
+        !search || searchableText.includes(search);
 
-    if (value.includes("pdf")) return "▤";
-    if (value.includes("image") || value.includes("screenshot")) return "▧";
-    if (value.includes("voice")) return "◉";
-    if (value.includes("link") || value.includes("web")) return "↗";
+      const matchesCategory =
+        category === "All" ||
+        (memory.category || "Other") === category;
 
-    return "✦";
-  };
+      const matchesFavorite =
+        !favoritesOnly || memory.is_favorite;
+
+      return (
+        matchesSearch &&
+        matchesCategory &&
+        matchesFavorite
+      );
+    });
+  }, [memories, query, category, favoritesOnly]);
+
+  function clearFilters() {
+    setQuery("");
+    setCategory("All");
+    setFavoritesOnly(false);
+  }
 
   return (
-    <main className="page">
-
-      {/* SIDEBAR */}
-
-      <aside className="sidebar">
-
-        <Link href="/dashboard" className="logo">
-          <Logo />
-        </Link>
-
-        <nav>
-
-          {/* DASHBOARD */}
-          <Link href="/dashboard" className="nav">
-            <span>⌂</span>
-            <label>Dashboard</label>
-          </Link>
-
-          {/* CAPTURE */}
-          <Link href="/capture" className="nav">
-            <span>＋</span>
-            <label>Capture</label>
-          </Link>
-
-          {/* MEMORIES */}
-          <Link href="/memories" className="nav">
-            <span>▣</span>
-            <label>Memories</label>
-          </Link>
-
-          {/* TIMELINE */}
-          <Link href="/timeline" className="nav">
-            <span>◇</span>
-            <label>Timeline</label>
-          </Link>
-
-          {/* REMINDERS */}
-          <Link href="/reminders" className="nav">
-            <span>◷</span>
-            <label>Reminders</label>
-          </Link>
-
-        </nav>
-
-      </aside>
-
-      {/* MAIN */}
-
-      <div className="main">
-
-        <header>
-
-          <div>
-            <p>PERSONAL MEMORY</p>
-            <h1>Search</h1>
+    <main
+      style={{
+        minHeight: "100vh",
+        background: "#f7f8fb",
+        padding: "42px 48px 70px",
+        color: "#17191f",
+      }}
+    >
+      <div
+        style={{
+          width: "100%",
+          maxWidth: "1120px",
+          margin: "0 auto",
+        }}
+      >
+        {/* HEADER */}
+        <header style={{ marginBottom: "30px" }}>
+          <div
+            style={{
+              marginBottom: "8px",
+              color: "#8b9099",
+              fontSize: "10px",
+              fontWeight: 700,
+              letterSpacing: "1.2px",
+            }}
+          >
+            FIND YOUR INFORMATION
           </div>
 
-          <Link href="/capture" className="capture">
-            + Capture memory
-          </Link>
+          <h1
+            style={{
+              margin: 0,
+              fontSize: "31px",
+              lineHeight: 1.2,
+              fontWeight: 700,
+              letterSpacing: "-0.7px",
+            }}
+          >
+            Search your memories
+          </h1>
 
+          <p
+            style={{
+              maxWidth: "600px",
+              margin: "9px 0 0",
+              color: "#777d87",
+              fontSize: "14px",
+              lineHeight: 1.6,
+            }}
+          >
+            Find the information you've saved and quickly
+            return to where you found it.
+          </p>
         </header>
 
-        {/* SEARCH HERO */}
-
-        <section className="hero">
-
-          <p className="label">FIND A MEMORY</p>
-
-          <h2>
-            What are you
-            <br />
-            trying to remember?
-          </h2>
-
-          <div className="search">
-
-            <span>⌕</span>
+        {/* SEARCH PANEL */}
+        <section
+          style={{
+            background: "#ffffff",
+            border: "1px solid #e6e7eb",
+            borderRadius: "15px",
+            padding: "17px",
+            boxShadow: "0 4px 18px rgba(20,25,35,0.035)",
+          }}
+        >
+          {/* SEARCH INPUT */}
+          <div
+            style={{
+              height: "58px",
+              display: "flex",
+              alignItems: "center",
+              gap: "12px",
+              padding: "0 16px",
+              background: "#f8f9fa",
+              border: "1px solid #e1e3e7",
+              borderRadius: "11px",
+            }}
+          >
+            <svg
+              width="20"
+              height="20"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.8"
+              style={{
+                flexShrink: 0,
+                color: "#777d87",
+              }}
+            >
+              <circle cx="10.8" cy="10.8" r="6.8" />
+              <path d="m16 16 5 5" />
+            </svg>
 
             <input
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search your saved memories..."
-              autoFocus
+              placeholder="What are you trying to remember?"
+              aria-label="Search memories"
+              style={{
+                width: "100%",
+                border: 0,
+                outline: 0,
+                background: "transparent",
+                color: "#17191f",
+                fontFamily: "inherit",
+                fontSize: "15px",
+              }}
             />
 
             {query && (
-              <button onClick={() => setQuery("")}>
+              <button
+                type="button"
+                onClick={() => setQuery("")}
+                style={{
+                  width: "27px",
+                  height: "27px",
+                  flexShrink: 0,
+                  border: 0,
+                  borderRadius: "50%",
+                  background: "#e8e9ec",
+                  color: "#656b74",
+                  fontSize: "19px",
+                  cursor: "pointer",
+                }}
+              >
                 ×
               </button>
             )}
-
           </div>
 
-          <p className="hint">
-            Search through the information you have captured.
-          </p>
+          {/* FILTERS */}
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: "15px",
+              marginTop: "14px",
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "6px",
+                overflowX: "auto",
+                paddingBottom: "2px",
+              }}
+            >
+              {categories.map((item) => (
+                <button
+                  key={item}
+                  type="button"
+                  onClick={() => setCategory(item)}
+                  style={{
+                    flexShrink: 0,
+                    padding: "7px 11px",
+                    border:
+                      category === item
+                        ? "1px solid #17191f"
+                        : "1px solid transparent",
+                    borderRadius: "7px",
+                    background:
+                      category === item
+                        ? "#17191f"
+                        : "transparent",
+                    color:
+                      category === item
+                        ? "#ffffff"
+                        : "#7a808a",
+                    fontFamily: "inherit",
+                    fontSize: "11px",
+                    fontWeight: 500,
+                    cursor: "pointer",
+                  }}
+                >
+                  {item}
+                </button>
+              ))}
+            </div>
 
+            <button
+              type="button"
+              onClick={() =>
+                setFavoritesOnly(!favoritesOnly)
+              }
+              style={{
+                flexShrink: 0,
+                display: "flex",
+                alignItems: "center",
+                gap: "6px",
+                padding: "8px 12px",
+                border: favoritesOnly
+                  ? "1px solid #d8dae0"
+                  : "1px solid #e1e3e7",
+                borderRadius: "8px",
+                background: favoritesOnly
+                  ? "#f1f1f3"
+                  : "#ffffff",
+                color: "#666c76",
+                fontFamily: "inherit",
+                fontSize: "11px",
+                fontWeight: 600,
+                cursor: "pointer",
+              }}
+            >
+              <span>★</span>
+              Favorites
+            </button>
+          </div>
         </section>
+
+        {/* RESULTS HEADER */}
+        <div
+          style={{
+            display: "flex",
+            alignItems: "flex-end",
+            justifyContent: "space-between",
+            margin: "35px 2px 13px",
+          }}
+        >
+          <div>
+            <h2
+              style={{
+                margin: 0,
+                fontSize: "16px",
+                fontWeight: 650,
+              }}
+            >
+              {query
+                ? "Search results"
+                : "Your saved information"}
+            </h2>
+
+            <p
+              style={{
+                margin: "4px 0 0",
+                color: "#9499a2",
+                fontSize: "11px",
+              }}
+            >
+              {loading
+                ? "Loading..."
+                : `${results.length} ${
+                    results.length === 1
+                      ? "item"
+                      : "items"
+                  } found`}
+            </p>
+          </div>
+
+          {(query ||
+            category !== "All" ||
+            favoritesOnly) && (
+            <button
+              type="button"
+              onClick={clearFilters}
+              style={{
+                border: 0,
+                background: "transparent",
+                color: "#6e747e",
+                fontFamily: "inherit",
+                fontSize: "12px",
+                cursor: "pointer",
+              }}
+            >
+              Clear filters
+            </button>
+          )}
+        </div>
+
+        {/* LOADING */}
+        {loading && (
+          <div
+            style={{
+              minHeight: "300px",
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              justifyContent: "center",
+              background: "#ffffff",
+              border: "1px dashed #dfe1e5",
+              borderRadius: "14px",
+              textAlign: "center",
+            }}
+          >
+            <div
+              style={{
+                width: "25px",
+                height: "25px",
+                marginBottom: "14px",
+                border: "2px solid #e3e5e8",
+                borderTopColor: "#5e646d",
+                borderRadius: "50%",
+                animation: "traceSearchSpin 0.8s linear infinite",
+              }}
+            />
+
+            <h3
+              style={{
+                margin: 0,
+                fontSize: "16px",
+                fontWeight: 650,
+              }}
+            >
+              Finding your information
+            </h3>
+
+            <p
+              style={{
+                margin: "7px 0 0",
+                color: "#8a9099",
+                fontSize: "12px",
+              }}
+            >
+              Loading your saved memories...
+            </p>
+          </div>
+        )}
+
+        {/* EMPTY */}
+        {!loading && results.length === 0 && (
+          <div
+            style={{
+              minHeight: "300px",
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              justifyContent: "center",
+              padding: "40px",
+              background: "#ffffff",
+              border: "1px dashed #dfe1e5",
+              borderRadius: "14px",
+              textAlign: "center",
+            }}
+          >
+            <div
+              style={{
+                width: "48px",
+                height: "48px",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                marginBottom: "14px",
+                borderRadius: "13px",
+                background: "#f0f1f3",
+                color: "#777d87",
+              }}
+            >
+              <svg
+                width="21"
+                height="21"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.6"
+              >
+                <circle cx="10.8" cy="10.8" r="6.8" />
+                <path d="m16 16 5 5" />
+              </svg>
+            </div>
+
+            <h3
+              style={{
+                margin: 0,
+                fontSize: "16px",
+                fontWeight: 650,
+              }}
+            >
+              {query
+                ? "No matching information"
+                : "Nothing saved yet"}
+            </h3>
+
+            <p
+              style={{
+                margin: "7px 0 17px",
+                color: "#8a9099",
+                fontSize: "12px",
+              }}
+            >
+              {query
+                ? "Try different words or remove one of the filters."
+                : "Capture something first and it will appear here."}
+            </p>
+
+            {!query && (
+              <Link
+                href="/capture"
+                style={{
+                  padding: "9px 14px",
+                  borderRadius: "8px",
+                  background: "#17191f",
+                  color: "#ffffff",
+                  textDecoration: "none",
+                  fontSize: "12px",
+                  fontWeight: 600,
+                }}
+              >
+                Capture something
+              </Link>
+            )}
+          </div>
+        )}
 
         {/* RESULTS */}
+        {!loading && results.length > 0 && (
+          <div
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              gap: "9px",
+            }}
+          >
+            {results.map((memory) => (
+              <Link
+                key={memory.id}
+                href={`/memories/${memory.id}`}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  gap: "25px",
+                  padding: "19px 20px",
+                  background: "#ffffff",
+                  border: "1px solid #e7e8ec",
+                  borderRadius: "12px",
+                  textDecoration: "none",
+                  color: "inherit",
+                }}
+              >
+                <div style={{ minWidth: 0 }}>
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "8px",
+                    }}
+                  >
+                    <h3
+                      style={{
+                        margin: 0,
+                        color: "#1b1e24",
+                        fontSize: "15px",
+                        fontWeight: 650,
+                      }}
+                    >
+                      {memory.title}
+                    </h3>
 
-        <section className="results">
-
-          <div className="results-header">
-
-            <div>
-              <p>YOUR MEMORIES</p>
-
-              <h2>
-                {query
-                  ? `${filteredMemories.length} result${
-                      filteredMemories.length === 1 ? "" : "s"
-                    }`
-                  : `${memories.length} saved`}
-              </h2>
-            </div>
-
-          </div>
-
-          {loading ? (
-
-            <div className="empty">
-              Loading your memories...
-            </div>
-
-          ) : filteredMemories.length === 0 ? (
-
-            <div className="empty">
-
-              <div className="empty-icon">
-                {query ? "⌕" : "✦"}
-              </div>
-
-              <h3>
-                {query
-                  ? "No matching memories"
-                  : "Nothing saved yet"}
-              </h3>
-
-              <p>
-                {query
-                  ? "Try different words or another detail."
-                  : "Capture your first memory and it will appear here."}
-              </p>
-
-              {!query && (
-                <Link href="/capture">
-                  Capture a memory →
-                </Link>
-              )}
-
-            </div>
-
-          ) : (
-
-            <div className="memory-list">
-
-              {filteredMemories.map((memory) => (
-
-                <Link
-                  href={`/memories/${memory.id}`}
-                  className="memory"
-                  key={memory.id}
-                >
-
-                  <div className="memory-icon">
-                    {sourceIcon(memory.source_type)}
+                    {memory.is_favorite && (
+                      <span
+                        style={{
+                          color: "#777d87",
+                          fontSize: "12px",
+                        }}
+                      >
+                        ★
+                      </span>
+                    )}
                   </div>
 
-                  <div className="memory-content">
+                  {memory.summary && (
+                    <p
+                      style={{
+                        maxWidth: "760px",
+                        margin: "6px 0 0",
+                        color: "#777d87",
+                        fontSize: "12px",
+                        lineHeight: 1.55,
+                      }}
+                    >
+                      {memory.summary}
+                    </p>
+                  )}
 
-                    <div className="meta">
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      flexWrap: "wrap",
+                      gap: "7px",
+                      marginTop: "11px",
+                      color: "#969ba4",
+                      fontSize: "10px",
+                    }}
+                  >
+                    <span
+                      style={{
+                        padding: "4px 7px",
+                        background: "#f1f2f4",
+                        borderRadius: "5px",
+                        color: "#666c75",
+                        fontWeight: 600,
+                      }}
+                    >
+                      {memory.category || "Other"}
+                    </span>
 
-                      <span>
-                        {memory.category || "Other"}
-                      </span>
+                    <span>
+                      {formatSource(memory.source_type)}
+                    </span>
 
-                      <time>
-                        {new Date(
-                          memory.created_at
-                        ).toLocaleDateString("en-IN", {
-                          day: "numeric",
-                          month: "short",
-                          year: "numeric",
-                        })}
-                      </time>
+                    <span>•</span>
 
-                    </div>
-
-                    <h3>{memory.title}</h3>
-
-                    {memory.summary && (
-                      <p>{memory.summary}</p>
-                    )}
+                    <span>
+                      {formatDate(memory.created_at)}
+                    </span>
 
                     {memory.deadline && (
-                      <small>
-                        Deadline:{" "}
-                        {new Date(
-                          memory.deadline
-                        ).toLocaleDateString("en-IN", {
-                          day: "numeric",
-                          month: "short",
-                          year: "numeric",
-                        })}
-                      </small>
+                      <>
+                        <span>•</span>
+
+                        <span>
+                          Deadline{" "}
+                          {formatDate(memory.deadline)}
+                        </span>
+                      </>
                     )}
-
                   </div>
+                </div>
 
-                  <div className="arrow">
-                    →
-                  </div>
-
-                </Link>
-
-              ))}
-
-            </div>
-
-          )}
-
-        </section>
-
+                <span
+                  style={{
+                    flexShrink: 0,
+                    color: "#a0a5ad",
+                    fontSize: "19px",
+                  }}
+                >
+                  →
+                </span>
+              </Link>
+            ))}
+          </div>
+        )}
       </div>
 
-      <style jsx>{`
-
-        * {
-          box-sizing: border-box;
-        }
-
-        .page {
-          min-height: 100vh;
-          background: #f7f8fb;
-          color: #101828;
-
-          font-family:
-            Inter,
-            system-ui,
-            -apple-system,
-            BlinkMacSystemFont,
-            "Segoe UI",
-            sans-serif;
-        }
-
-        /* SIDEBAR */
-
-        .sidebar {
-          position: fixed;
-
-          left: 0;
-          top: 0;
-
-          width: 125px;
-          height: 100vh;
-
-          background: white;
-
-          border-right: 1px solid #eaecf0;
-
-          display: flex;
-          flex-direction: column;
-          align-items: center;
-
-          padding: 25px 12px;
-
-          z-index: 20;
-        }
-
-        .logo {
-          display: block;
-
-          margin-bottom: 80px;
-        }
-
-        nav {
-          display: flex;
-          flex-direction: column;
-
-          gap: 12px;
-        }
-
-        .nav {
-          width: 70px;
-          min-height: 58px;
-
-          display: flex;
-          flex-direction: column;
-
-          align-items: center;
-          justify-content: center;
-
-          gap: 4px;
-
-          color: #98a2b3;
-
-          text-decoration: none;
-
-          border-radius: 16px;
-
-          transition: 0.2s;
-        }
-
-        .nav span {
-          font-size: 22px;
-        }
-
-        .nav label {
-          font-size: 8px;
-          font-weight: 700;
-        }
-
-        .nav:hover {
-          background: #f2f4f7;
-          color: #101828;
-        }
-
-        /* MAIN */
-
-        .main {
-          margin-left: 125px;
-
-          width: calc(100% - 125px);
-
-          max-width: 1200px;
-
-          padding: 70px 6% 100px;
-        }
-
-        header {
-          display: flex;
-
-          align-items: flex-end;
-
-          justify-content: space-between;
-
-          margin-bottom: 35px;
-        }
-
-        header p {
-          margin: 0 0 8px;
-
-          color: #98a2b3;
-
-          font-size: 11px;
-
-          font-weight: 800;
-
-          letter-spacing: 0.14em;
-        }
-
-        header h1 {
-          margin: 0;
-
-          font-size: 48px;
-
-          letter-spacing: -0.05em;
-        }
-
-        .capture {
-          background: #17191f;
-
-          color: white;
-
-          text-decoration: none;
-
-          padding: 16px 20px;
-
-          border-radius: 13px;
-
-          font-size: 13px;
-
-          font-weight: 800;
-        }
-
-        /* HERO */
-
-        .hero {
-          background: #17191f;
-
-          color: white;
-
-          border-radius: 28px;
-
-          padding: 55px;
-
-          margin-bottom: 45px;
-
-          overflow: hidden;
-        }
-
-        .label {
-          color: #98a2b3;
-
-          font-size: 11px;
-
-          font-weight: 800;
-
-          letter-spacing: 0.15em;
-        }
-
-        .hero h2 {
-          margin: 18px 0 30px;
-
-          font-size: clamp(35px, 5vw, 58px);
-
-          line-height: 0.98;
-
-          letter-spacing: -0.055em;
-        }
-
-        .search {
-          height: 62px;
-
-          max-width: 700px;
-
-          display: flex;
-
-          align-items: center;
-
-          background: white;
-
-          border-radius: 14px;
-
-          padding: 0 18px;
-
-          color: #667085;
-        }
-
-        .search span {
-          font-size: 25px;
-
-          margin-right: 12px;
-        }
-
-        .search input {
-          flex: 1;
-
-          border: 0;
-
-          outline: 0;
-
-          background: transparent;
-
-          font-size: 14px;
-
-          color: #101828;
-        }
-
-        .search button {
-          border: 0;
-
-          background: transparent;
-
-          font-size: 24px;
-
-          color: #98a2b3;
-
-          cursor: pointer;
-        }
-
-        .hint {
-          color: #98a2b3;
-
-          font-size: 11px;
-        }
-
-        /* RESULTS */
-
-        .results-header p {
-          margin: 0 0 8px;
-
-          color: #98a2b3;
-
-          font-size: 11px;
-
-          font-weight: 800;
-
-          letter-spacing: 0.14em;
-        }
-
-        .results-header h2 {
-          margin: 0 0 18px;
-
-          font-size: 22px;
-        }
-
-        .memory-list {
-          display: flex;
-
-          flex-direction: column;
-
-          gap: 10px;
-        }
-
-        .memory {
-          background: white;
-
-          border: 1px solid #eaecf0;
-
-          border-radius: 17px;
-
-          padding: 19px;
-
-          display: grid;
-
-          grid-template-columns:
-            48px
-            minmax(0, 1fr)
-            30px;
-
-          gap: 15px;
-
-          align-items: center;
-
-          color: inherit;
-
-          text-decoration: none;
-
-          transition: 0.2s;
-        }
-
-        .memory:hover {
-          transform: translateY(-2px);
-
-          border-color: #d0d5dd;
-
-          box-shadow:
-            0 12px 30px rgba(16, 24, 40, 0.06);
-        }
-
-        .memory-icon {
-          width: 48px;
-
-          height: 48px;
-
-          border-radius: 13px;
-
-          background: #f2f4f7;
-
-          display: grid;
-
-          place-items: center;
-
-          font-size: 18px;
-        }
-
-        .memory-content {
-          min-width: 0;
-        }
-
-        .meta {
-          display: flex;
-
-          gap: 15px;
-        }
-
-        .meta span {
-          font-size: 9px;
-
-          text-transform: uppercase;
-
-          letter-spacing: 0.08em;
-
-          font-weight: 800;
-
-          color: #667085;
-        }
-
-        .meta time {
-          font-size: 10px;
-
-          color: #98a2b3;
-        }
-
-        .memory h3 {
-          margin: 7px 0 5px;
-
-          font-size: 15px;
-
-          overflow: hidden;
-
-          text-overflow: ellipsis;
-
-          white-space: nowrap;
-        }
-
-        .memory p {
-          margin: 0;
-
-          color: #667085;
-
-          font-size: 11px;
-
-          line-height: 1.5;
-        }
-
-        .memory small {
-          display: inline-block;
-
-          margin-top: 7px;
-
-          color: #667085;
-
-          font-size: 10px;
-
-          font-weight: 700;
-        }
-
-        .arrow {
-          color: #98a2b3;
-
-          font-size: 20px;
-        }
-
-        /* EMPTY */
-
-        .empty {
-          background: white;
-
-          border: 1px solid #eaecf0;
-
-          border-radius: 18px;
-
-          min-height: 250px;
-
-          display: flex;
-
-          align-items: center;
-
-          justify-content: center;
-
-          flex-direction: column;
-
-          text-align: center;
-
-          color: #98a2b3;
-
-          padding: 30px;
-        }
-
-        .empty-icon {
-          width: 52px;
-
-          height: 52px;
-
-          border-radius: 50%;
-
-          border: 1px dashed #d0d5dd;
-
-          display: grid;
-
-          place-items: center;
-
-          margin-bottom: 15px;
-        }
-
-        .empty h3 {
-          color: #101828;
-
-          margin: 0 0 7px;
-
-          font-size: 16px;
-        }
-
-        .empty p {
-          margin: 0 0 15px;
-
-          font-size: 12px;
-        }
-
-        .empty a {
-          color: #101828;
-
-          font-size: 12px;
-
-          font-weight: 800;
-
-          text-decoration: none;
-        }
-
-        /* MOBILE */
-
-        @media (max-width: 700px) {
-
-          .sidebar {
-            width: 82px;
-
-            padding: 20px 8px;
+      <style jsx global>{`
+        @keyframes traceSearchSpin {
+          to {
+            transform: rotate(360deg);
           }
-
-          .main {
-            margin-left: 82px;
-
-            width: calc(100% - 82px);
-
-            padding: 45px 5%;
-          }
-
-          .logo {
-            margin-bottom: 55px;
-          }
-
-          .nav {
-            width: 60px;
-
-            min-height: 55px;
-          }
-
-          header {
-            flex-direction: column;
-
-            align-items: flex-start;
-
-            gap: 18px;
-          }
-
-          header h1 {
-            font-size: 40px;
-          }
-
-          .capture {
-            width: 100%;
-
-            text-align: center;
-          }
-
-          .hero {
-            padding: 35px 25px;
-          }
-
-          .hero h2 {
-            font-size: 38px;
-          }
-
         }
 
+        @media (max-width: 800px) {
+          .trace-search-page-mobile {
+            padding: 30px 20px !important;
+          }
+        }
       `}</style>
-
     </main>
   );
+}
+
+function formatSource(source: string) {
+  return source
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function formatDate(date: string) {
+  return new Date(date).toLocaleDateString("en-IN", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  });
 }

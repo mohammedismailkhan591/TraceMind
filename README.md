@@ -17,12 +17,12 @@ TraceMind is a personal information memory engine. It is designed to capture scr
 - Supabase production database schema
 - User-specific Row Level Security foundation
 - Storage model for uploaded assets
-- Free local processing foundation (no paid AI API required)
+- OpenAI environment variable ready for AI processing
 
 ## Run locally
 
 1. Install Node.js 20+.
-2. Create `.env.local` from the example below.
+2. Copy `.env.example` to `.env.local`.
 3. Add your Supabase URL and anon key.
 4. Create a Supabase project.
 5. Run `supabase/schema.sql` in the Supabase SQL Editor.
@@ -43,7 +43,7 @@ Open `http://localhost:3000`.
 
 ## Important
 
-The database and authentication use Supabase. File storage is private. Basic text classification and summarization are local; no OpenAI API key is required.
+The UI in this package is the product foundation. The database schema is real and ready for Supabase, but the authentication buttons and AI extraction endpoint still need to be wired to your project's credentials before public deployment.
 
 Do not put secret API keys in `NEXT_PUBLIC_*` variables.
 
@@ -51,7 +51,7 @@ Do not put secret API keys in `NEXT_PUBLIC_*` variables.
 
 The next implementation layer should connect:
 
-Capture -> Supabase Storage -> local processing -> memories table -> search -> reminders. Paid AI can be added later, but it is not required for this build.
+Capture -> Supabase Storage -> OCR/PDF extraction -> OpenAI structured extraction -> memories table -> embeddings -> semantic search -> reminders.
 
 For social login, enable Google and Facebook providers in Supabase Authentication and connect the callback URL for your Vercel domain.
 

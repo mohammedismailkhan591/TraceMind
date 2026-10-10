@@ -1,3 +1,139 @@
-@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap");
-:root{--bg:#f8fafc;--text:#0f172a;--muted:#64748b;--border:#e2e8f0;--card:#fff;--accent:#2563eb}
-*{box-sizing:border-box}html,body{margin:0;padding:0;min-height:100%;background:var(--bg)}body{font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:var(--text);-webkit-font-smoothing:antialiased}button,input,textarea,select{font:inherit}button{cursor:pointer}a{color:inherit}img{max-width:100%;display:block}::selection{background:#bfdbfe;color:#0f172a}:focus-visible{outline:3px solid rgba(37,99,235,.22);outline-offset:2px}::-webkit-scrollbar{width:9px;height:9px}::-webkit-scrollbar-thumb{background:#cbd5e1;border-radius:20px}::-webkit-scrollbar-track{background:transparent}
+/* =========================================================
+   TraceMind - Global Styles
+   Keep page-specific UI inside each page/component.
+   ========================================================= */
+
+:root {
+  --background: #f5f9ff;
+  --foreground: #10213f;
+  --muted: #64748b;
+  --border: #dbe7f5;
+  --card: #ffffff;
+  --blue: #2563eb;
+  --blue-dark: #1d4ed8;
+  --blue-soft: #eff6ff;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  min-height: 100%;
+}
+
+html {
+  background: var(--background);
+}
+
+body {
+  background: linear-gradient(180deg, #f8fbff 0%, #f5f9ff 55%, #ffffff 100%);
+  color: var(--foreground);
+  font-family:
+    Arial,
+    Helvetica,
+    sans-serif;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* Remove default spacing */
+h1,
+h2,
+h3,
+h4,
+h5,
+h6,
+p {
+  margin: 0;
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+a {
+  color: inherit;
+}
+
+img {
+  max-width: 100%;
+  display: block;
+}
+
+/* Prevent horizontal scrolling */
+html,
+body {
+  overflow-x: hidden;
+}
+
+/* Text selection */
+::selection {
+  background: #bfdbfe;
+  color: #10213f;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #bfdbfe;
+  border-radius: 10px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #93c5fd;
+}
+
+/* Focus */
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible {
+  outline: 2px solid #2563eb;
+  outline-offset: 2px;
+}
+
+/* Form controls */
+input,
+textarea,
+select {
+  color: #17191f;
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: #a0a5ad;
+}
+
+/* Mobile */
+@media (max-width: 768px) {
+  body {
+    font-size: 14px;
+  }
+}
+/* Clean, centered authentication screens */
+.auth-page{min-height:100vh;background:#f7faff;display:grid;grid-template-columns:minmax(0,1fr) minmax(420px,520px);align-items:stretch}
+.auth-visual{background:#eff6ff;border-right:1px solid #dce7f5;padding:44px 7vw;display:flex;flex-direction:column}.auth-visual .logo{margin-bottom:auto}.auth-visual-content{max-width:520px;margin:auto 0}.auth-visual h1{font-size:clamp(36px,4vw,58px);line-height:1.05;letter-spacing:-2px;color:#10213f;margin:0 0 20px}.auth-visual p{font-size:16px;line-height:1.7;color:#5d708b;max-width:470px}.auth-points{display:grid;gap:10px;margin-top:28px;color:#24466e;font-size:13px;font-weight:650}
+.auth-card{display:flex;align-items:center;justify-content:center;background:#fff;padding:40px 34px}.auth-form{width:min(100%,390px);text-align:left}.auth-form> .logo{display:none}.auth-form h1{font-size:30px;line-height:1.15;letter-spacing:-.8px;color:#10213f;margin:0}.auth-form>.muted{margin:9px 0 24px}.muted{color:#71829b;font-size:13px;line-height:1.6}.google-btn{width:100%;height:46px;border:1px solid #d5e1ef;background:#fff;border-radius:8px;display:flex;align-items:center;justify-content:center;gap:10px;color:#203552;font-size:13px;font-weight:700}.google-btn:hover{background:#f7faff;border-color:#bfd2ea}.google-btn svg{flex:0 0 auto}.divider{display:flex;align-items:center;gap:12px;margin:22px 0;color:#9aa8ba;font-size:9px;font-weight:800;letter-spacing:1.2px}.divider:before,.divider:after{content:"";height:1px;background:#e1e9f2;flex:1}.label{display:block;color:#405571;font-size:11px;font-weight:700;margin:14px 0 7px}.input{width:100%;height:44px;border:1px solid #d5e1ef;border-radius:8px;padding:0 12px;background:#fff;color:#10213f;font-size:13px}.input:focus{border-color:#2563eb;outline:2px solid #dbeafe;outline-offset:0}.primary-btn{width:100%;height:46px;margin-top:18px;border:0;border-radius:8px;background:#2563eb;color:#fff;font-size:13px;font-weight:750}.primary-btn:hover{background:#1d4ed8}.primary-btn:disabled,.google-btn:disabled{opacity:.65;cursor:not-allowed}.auth-message{margin:14px 0;padding:10px 12px;border-radius:7px;background:#eff6ff;color:#2454a6;font-size:12px;line-height:1.5}.auth-form>form+.auth-message{margin-bottom:14px}.auth-form>.muted:last-child{margin-top:20px;text-align:center}.auth-link{color:#1d4ed8;font-weight:700;text-decoration:none}.auth-link:hover{text-decoration:underline}.forgot-row{display:flex;justify-content:flex-end;margin-top:9px;font-size:11px}
+@media(max-width:800px){.auth-page{grid-template-columns:1fr}.auth-visual{display:none}.auth-card{min-height:100vh;padding:28px 20px}.auth-form{width:min(100%,420px)}}
+
+.auth-single{display:flex;align-items:center;justify-content:center;grid-template-columns:1fr}.auth-single .auth-card{width:100%;min-height:100vh}.auth-single .auth-form>.logo{display:block;margin-bottom:26px}.auth-bottom{text-align:center;margin-top:18px}

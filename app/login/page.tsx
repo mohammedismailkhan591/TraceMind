@@ -3,11 +3,9 @@
 import Link from "next/link";
 import { useState } from "react";
 import Logo from "../../components/Logo";
-import { createClient } from "../../lib/supabase";
+import { createClient, isSupabaseConfigured, SUPABASE_SETUP_MESSAGE } from "../../lib/supabase";
 
 export default function Login() {
-  const supabase = createClient();
-
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [message, setMessage] = useState("");
@@ -26,25 +24,32 @@ export default function Login() {
 
     setLoading(true);
 
+    const supabase = createClient();
     const { error } = await supabase.auth.signInWithPassword({
       email,
       password,
     });
 
-    setLoading(false);
-
     if (error) {
-      setMessage(error.message);
-      return;
-    }
+  setLoading(false);
+  setMessage(error.message);
+  return;
+}
 
-    window.location.href = "/dashboard";
+// Navigate only after Supabase confirms login succeeded.
+window.location.href = "/dashboard";
+    
   };
 
   const handleGoogleLogin = async () => {
     setMessage("");
+    if (!isSupabaseConfigured()) {
+      setMessage(SUPABASE_SETUP_MESSAGE);
+      return;
+    }
     setLoading(true);
 
+    const supabase = createClient();
     const { error } = await supabase.auth.signInWithOAuth({
       provider: "google",
       options: {

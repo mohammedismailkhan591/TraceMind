@@ -493,8 +493,11 @@ export default function MemoriesPage() {
 
       if (assets && assets.length > 0) {
         const paths = assets
-          .map((asset) => asset.storage_path)
-          .filter(Boolean);
+          .map((asset: { storage_path: string | null }) => asset.storage_path)
+          .filter(
+            (path): path is string =>
+              typeof path === "string" && path.length > 0
+          );
 
         if (paths.length > 0) {
           const { error: storageError } =
@@ -560,6 +563,7 @@ export default function MemoriesPage() {
   }
 
   return (
+    <>
       <main className="memories-page">
         <div className="memories-container">
 
@@ -1793,5 +1797,6 @@ export default function MemoriesPage() {
           }
         }
       `}</style>
+    </>
   );
 }

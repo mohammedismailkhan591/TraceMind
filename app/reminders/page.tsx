@@ -23,22 +23,17 @@ type Reminder = {
 
 const REMINDER_WINDOWS = [
   {
-    kind: "7_days",
-    label: "7 days before",
-    milliseconds: 7 * 24 * 60 * 60 * 1000,
-  },
-  {
-    kind: "24_hours",
+    kind: "24h",
     label: "24 hours before",
     milliseconds: 24 * 60 * 60 * 1000,
   },
   {
-    kind: "7_hours",
+    kind: "7h",
     label: "7 hours before",
     milliseconds: 7 * 60 * 60 * 1000,
   },
   {
-    kind: "1_hour",
+    kind: "1h",
     label: "1 hour before",
     milliseconds: 60 * 60 * 1000,
   },
@@ -203,6 +198,18 @@ export default function RemindersPage() {
 
       try {
         const now = Date.now();
+
+        // Remove obsolete schedules from older TraceMind builds so a deadline
+        // can never accidentally keep a 7-day notification.
+        const { error: obsoleteError } = await supabase
+          .from("reminders")
+          .delete()
+          .eq("user_id", uid)
+          .in("reminder_kind", ["7_days", "7d"]);
+
+        if (obsoleteError) {
+          throw obsoleteError;
+        }
 
         const memoriesWithDeadlines =
           memoryList.filter((memory) => {
@@ -563,6 +570,7 @@ export default function RemindersPage() {
   ========================= */
 
   return (
+    <>
       <div className="reminders-page">
 
         {/* HEADER */}
@@ -693,6 +701,62 @@ export default function RemindersPage() {
             </strong>
           </div>
 
+        </section>
+
+        {/* DEADLINE SAFETY SCHEDULE */}
+
+        <section className="deadline-safety" aria-label="Deadline reminder schedule">
+          <div className="deadline-safety-copy">
+            <span className="deadline-safety-icon">✓</span>
+            <div>
+              <strong>Deadline protection is active</strong>
+              <p>Every deadline gets exactly three checkpoints: 24 hours, 7 hours, and 1 hour before it ends.</p>
+            </div>
+          </div>
+          <div className="deadline-chips">
+            <span>24h before</span>
+            <span>7h before</span>
+            <span>1h before</span>
+          </div>
+        </section>
+
+        {/* SAVED DEADLINES */}
+
+        <section className="saved-deadlines" aria-label="Saved deadlines">
+          <div className="saved-deadlines-head">
+            <div>
+              <strong>Saved deadlines</strong>
+              <span>Your actual deadlines, not just reminder times.</span>
+            </div>
+            <span className="saved-deadline-count">
+              {memories.filter((memory) => Boolean(memory.deadline)).length}
+            </span>
+          </div>
+
+          {memories.filter((memory) => Boolean(memory.deadline)).length === 0 ? (
+            <div className="saved-deadlines-empty">
+              No deadline is saved yet. Add a deadline when creating a memory.
+            </div>
+          ) : (
+            <div className="saved-deadline-list">
+              {memories
+                .filter((memory) => Boolean(memory.deadline))
+                .slice(0, 6)
+                .map((memory) => (
+                  <div className="saved-deadline-row" key={memory.id}>
+                    <div>
+                      <strong>{memory.title || "Untitled memory"}</strong>
+                      <span>Deadline: {formatDate(memory.deadline as string)}</span>
+                    </div>
+                    <span className="deadline-tag">
+                      {new Date(memory.deadline as string).getTime() > Date.now()
+                        ? "Upcoming"
+                        : "Expired"}
+                    </span>
+                  </div>
+                ))}
+            </div>
+          )}
         </section>
 
         {/* CONTROLS */}
@@ -1085,6 +1149,156 @@ export default function RemindersPage() {
           letter-spacing: -.04em;
         }
 
+        .deadline-safety {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 18px;
+          margin: 24px 0;
+          padding: 18px 20px;
+          border: 1px solid #dbeafe;
+          border-radius: 16px;
+          background: linear-gradient(135deg, #f8fbff 0%, #eff6ff 100%);
+        }
+
+        .deadline-safety-copy {
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          min-width: 0;
+        }
+
+        .deadline-safety-icon {
+          display: grid;
+          place-items: center;
+          width: 36px;
+          height: 36px;
+          flex: 0 0 36px;
+          border-radius: 10px;
+          background: #2563eb;
+          color: #fff;
+          font-weight: 800;
+        }
+
+        .deadline-safety-copy strong {
+          color: #102a56;
+          font-size: 13px;
+        }
+
+        .deadline-safety-copy p {
+          margin: 4px 0 0;
+          color: #64748b;
+          font-size: 11px;
+          line-height: 1.5;
+        }
+
+        .deadline-chips {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 7px;
+          justify-content: flex-end;
+        }
+
+        .deadline-chips span {
+          padding: 7px 9px;
+          border: 1px solid #bfdbfe;
+          border-radius: 999px;
+          background: #fff;
+          color: #1d4ed8;
+          font-size: 10px;
+          font-weight: 750;
+          white-space: nowrap;
+        }
+
+        .saved-deadlines {
+          margin: 18px 0 20px;
+          padding: 16px;
+          border: 1px solid #e2e8f0;
+          border-radius: 14px;
+          background: #ffffff;
+        }
+
+        .saved-deadlines-head {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 16px;
+          margin-bottom: 12px;
+        }
+
+        .saved-deadlines-head strong {
+          display: block;
+          color: #0f172a;
+          font-size: 13px;
+        }
+
+        .saved-deadlines-head span {
+          display: block;
+          margin-top: 3px;
+          color: #64748b;
+          font-size: 11px;
+        }
+
+        .saved-deadline-count {
+          display: grid !important;
+          place-items: center;
+          width: 30px;
+          height: 30px;
+          margin: 0 !important;
+          border-radius: 50%;
+          color: #1d4ed8 !important;
+          background: #eff6ff;
+          font-size: 12px !important;
+          font-weight: 800;
+        }
+
+        .saved-deadlines-empty {
+          padding: 14px;
+          border-radius: 10px;
+          background: #f8fafc;
+          color: #64748b;
+          font-size: 11px;
+        }
+
+        .saved-deadline-list {
+          display: grid;
+          gap: 8px;
+        }
+
+        .saved-deadline-row {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 12px;
+          padding: 11px 12px;
+          border: 1px solid #eef2f7;
+          border-radius: 10px;
+          background: #fbfdff;
+        }
+
+        .saved-deadline-row strong {
+          display: block;
+          color: #1e293b;
+          font-size: 12px;
+        }
+
+        .saved-deadline-row > div > span {
+          display: block;
+          margin-top: 3px;
+          color: #64748b;
+          font-size: 10px;
+        }
+
+        .deadline-tag {
+          flex-shrink: 0;
+          padding: 5px 8px;
+          border-radius: 999px;
+          color: #1d4ed8;
+          background: #eff6ff;
+          font-size: 9px;
+          font-weight: 700;
+        }
+
         .controls {
           display: flex;
           align-items: center;
@@ -1288,6 +1502,15 @@ export default function RemindersPage() {
 
         @media (max-width: 800px) {
 
+          .deadline-safety {
+            align-items: flex-start;
+            flex-direction: column;
+          }
+
+          .deadline-chips {
+            justify-content: flex-start;
+          }
+
           .reminders-page {
             padding: 28px 20px 50px;
           }
@@ -1330,5 +1553,6 @@ export default function RemindersPage() {
         }
 
       `}</style>
+    </>
   );
 }

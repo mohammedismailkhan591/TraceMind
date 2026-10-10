@@ -76,6 +76,11 @@ export default function Capture() {
   const [category, setCategory] = useState("Other");
   const [link, setLink] = useState("");
   const [text, setText] = useState("");
+  const [summary, setSummary] = useState("");
+  const [deadline, setDeadline] = useState("");
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiTags, setAiTags] = useState<string[]>([]);
+  const [isImportant, setIsImportant] = useState(false);
   const [file, setFile] = useState<File | null>(null);
   const [dragging, setDragging] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -138,6 +143,10 @@ export default function Capture() {
     setFile(null);
     setLink("");
     setText("");
+    setSummary("");
+    setDeadline("");
+    setAiTags([]);
+    setIsImportant(false);
     clearRecording();
     resetStatus();
 
@@ -394,6 +403,58 @@ export default function Capture() {
     );
   }
 
+  async function analyzeWithAI() {
+    resetStatus();
+    if (!file && !text.trim() && !link.trim()) {
+      setStatus({ type: "error", text: "Add text, a link, screenshot, or PDF before using AI analysis." });
+      return;
+    }
+    if (file && file.size > 8 * 1024 * 1024) {
+      setStatus({ type: "error", text: "For AI analysis, choose a file smaller than 8 MB. You can still save a larger file without AI." });
+      return;
+    }
+    setAiLoading(true);
+    try {
+      let fileBase64 = "";
+      if (file) {
+        fileBase64 = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => {
+            const result = String(reader.result ?? "");
+            resolve(result.includes(",") ? result.slice(result.indexOf(",") + 1) : result);
+          };
+          reader.onerror = () => reject(new Error("Could not read the selected file."));
+          reader.readAsDataURL(file);
+        });
+      }
+      const response = await fetch("/api/ai/analyze", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ captureType, text, link, fileBase64, mimeType: file?.type ?? "" }),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "AI analysis failed.");
+      if (result.title) setTitle(result.title);
+      if (result.category) setCategory(result.category);
+      if (result.summary) setSummary(result.summary);
+      if (Array.isArray(result.tags)) setAiTags(result.tags.filter((tag: unknown): tag is string => typeof tag === "string"));
+      if (typeof result.isImportant === "boolean") setIsImportant(result.isImportant);
+      if (result.deadlineISO) {
+        const date = new Date(result.deadlineISO);
+        if (!Number.isNaN(date.getTime())) {
+          const local = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
+          setDeadline(local.toISOString().slice(0, 16));
+        }
+      }
+      if (result.extractedText && (captureType === "text" || !text.trim())) setText(result.extractedText);
+      setStatus({ type: "success", text: "AI suggestions are ready. Review the title, category, summary and deadline before saving." });
+    } catch (error) {
+      setStatus({ type: "error", text: error instanceof Error ? error.message : "AI analysis failed." });
+    } finally {
+      setAiLoading(false);
+    }
+  }
+
   async function saveMemory() {
     resetStatus();
 
@@ -498,24 +559,19 @@ export default function Capture() {
                 ? link.trim()
                 : null,
 
-            content:
-              captureType === "text"
-                ? text.trim()
-                : null,
+            content: text.trim() || null,
 
-            summary: null,
+            summary: summary.trim() || null,
+            deadline: deadline ? new Date(deadline).toISOString() : null,
+            is_favorite: isImportant,
 
             metadata: {
               capture_type:
                 captureType,
 
-              processing_status:
-                captureType ===
-                  "text" ||
-                captureType ===
-                  "link"
-                  ? "ready"
-                  : "pending",
+              processing_status: summary.trim() ? "ai_analyzed" : (captureType === "text" || captureType === "link" ? "ready" : "pending"),
+              ai_tags: aiTags,
+              is_important: isImportant,
             },
           })
           .select("id")
@@ -669,6 +725,10 @@ export default function Capture() {
       setCategory("Other");
       setLink("");
       setText("");
+      setSummary("");
+      setDeadline("");
+      setAiTags([]);
+      setIsImportant(false);
       setFile(null);
 
       clearRecording();
@@ -728,6 +788,7 @@ export default function Capture() {
     )!;
 
   return (
+    <>
       <div className="capture-page">
         <header className="capture-hero">
           <div>
@@ -1071,9 +1132,7 @@ export default function Capture() {
                       </strong>
 
                       <small>
-                        Speak naturally.
-                        You can review it
-                        before saving.
+                        Speak naturally. Your recording stays in your private memory storage and can be reviewed before saving.
                       </small>
 
                       <button
@@ -1082,6 +1141,7 @@ export default function Capture() {
                         onClick={
                           startRecording
                         }
+                        aria-label="Start voice recording"
                       >
                         ● Start recording
                       </button>
@@ -1126,8 +1186,11 @@ export default function Capture() {
                       <audio
                         className="voice-player"
                         controls
+                        preload="metadata"
                         src={audioUrl}
                       />
+
+                      <small className="voice-format-note">WebM / Opus • private upload when you save</small>
 
                       <button
                         type="button"
@@ -1142,6 +1205,36 @@ export default function Capture() {
                   )}
               </div>
             )}
+
+            <label className="field block">
+              <span>Deadline (optional)</span>
+              <input
+                type="datetime-local"
+                value={deadline}
+                onChange={(e) => setDeadline(e.target.value)}
+              />
+              <small>AI may suggest a deadline from the content. Always verify it before saving.</small>
+            </label>
+
+            <label className="field block">
+              <span>Summary (AI-generated or your own)</span>
+              <textarea
+                rows={3}
+                value={summary}
+                onChange={(e) => setSummary(e.target.value)}
+                placeholder="Use AI analysis to suggest a summary, or write your own..."
+              />
+            </label>
+            {aiTags.length > 0 && (
+              <div className="field block">
+                <span>Suggested tags</span>
+                <div className="format-pill">{aiTags.join(" · ")}</div>
+              </div>
+            )}
+            <label className="important-toggle">
+              <input type="checkbox" checked={isImportant} onChange={(e) => setIsImportant(e.target.checked)} />
+              Mark this memory as important
+            </label>
 
             {status && (
               <div
@@ -1164,6 +1257,14 @@ export default function Capture() {
                 private to your account.
               </p>
 
+              <button
+                type="button"
+                className="ai-analyze-button"
+                onClick={analyzeWithAI}
+                disabled={aiLoading || loading || recording}
+              >
+                {aiLoading ? "Analyzing…" : "✦ Analyze with AI"}
+              </button>
               <button
                 type="button"
                 onClick={
@@ -1294,7 +1395,7 @@ export default function Capture() {
           font-size: 11px;
           letter-spacing: 0.18em;
           font-weight: 800;
-          color: #6c5ce7;
+          color: #2563eb;
           margin-bottom: 9px;
         }
 
@@ -1401,14 +1502,14 @@ export default function Capture() {
         }
 
         .capture-option:hover {
-          border-color: #c9c4fa;
+          border-color: #bfdbfe;
           transform: translateY(-1px);
         }
 
         .capture-option.selected {
-          border-color: #8b7df0;
-          background: #f7f5ff;
-          box-shadow: 0 0 0 3px #eeeaff;
+          border-color: #60a5fa;
+          background: #eff6ff;
+          box-shadow: 0 0 0 3px #dbeafe;
         }
 
         .option-icon {
@@ -1420,7 +1521,7 @@ export default function Capture() {
           background: #fff;
           border: 1px solid #ececf2;
           font-weight: 700;
-          color: #6556d9;
+          color: #2563eb;
           flex-shrink: 0;
         }
 
@@ -1488,8 +1589,8 @@ export default function Capture() {
         .field input:focus,
         .field select:focus,
         .field textarea:focus {
-          border-color: #9a90ed;
-          box-shadow: 0 0 0 3px #f0eeff;
+          border-color: #60a5fa;
+          box-shadow: 0 0 0 3px #dbeafe;
         }
 
         .format-pill {
@@ -1507,7 +1608,7 @@ export default function Capture() {
         }
 
         .format-pill span {
-          color: #6758db;
+          color: #2563eb;
         }
 
         .dropzone {
@@ -1526,8 +1627,8 @@ export default function Capture() {
         }
 
         .dropzone.dragging {
-          border-color: #7769df;
-          background: #f5f3ff;
+          border-color: #2563eb;
+          background: #eff6ff;
         }
 
         .upload-mark,
@@ -1537,7 +1638,7 @@ export default function Capture() {
           display: grid;
           place-items: center;
           border-radius: 12px;
-          background: #f0eeff;
+          background: #dbeafe;
           color: #6758dc;
           font-size: 20px;
           margin-bottom: 10px;
@@ -1588,7 +1689,7 @@ export default function Capture() {
           border-radius: 50%;
           display: grid;
           place-items: center;
-          background: #f0eeff;
+          background: #dbeafe;
           color: #6758dc;
           font-size: 25px;
           margin-bottom: 15px;
@@ -1654,6 +1755,13 @@ export default function Capture() {
           background: #c93f3f;
         }
 
+        .voice-format-note {
+          display: block;
+          margin-top: 8px;
+          color: #64748b;
+          font-size: 10px;
+        }
+
         .voice-player {
           width: min(100%, 420px);
           margin-top: 18px;
@@ -1696,6 +1804,9 @@ export default function Capture() {
           color: #ae3434;
         }
 
+        .important-toggle { display: flex; align-items: center; gap: 9px; margin-top: 14px; color: #55566b; font-size: 12px; }
+        .important-toggle input { accent-color: #6d5ce8; }
+
         .save-row {
           display: flex;
           justify-content: space-between;
@@ -1721,6 +1832,11 @@ export default function Capture() {
           font-size: 12px;
           font-weight: 800;
           cursor: pointer;
+        }
+
+        .save-row .ai-analyze-button {
+          background: linear-gradient(135deg, #6256e8, #8b5cf6);
+          white-space: nowrap;
         }
 
         .save-row button:disabled {
@@ -1921,5 +2037,6 @@ export default function Capture() {
           }
         }
       `}</style>
+    </>
   );
 }

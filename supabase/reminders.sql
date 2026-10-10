@@ -15,4 +15,5 @@ create unique index if not exists reminders_user_memory_kind_unique
   where memory_id is not null;
 
 -- Optional helper comment:
--- reminder_kind values used by TraceMind: 24h, 7h, 1h, custom.
+-- TraceMind automatically creates exactly: 24h, 7h, 1h.
+-- Custom reminders remain supported when created manually.

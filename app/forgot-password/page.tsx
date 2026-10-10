@@ -1,137 +1,27 @@
 "use client";
 
-import { FormEvent, useState } from "react";
 import Link from "next/link";
-import { createClient } from "../../lib/supabase";
-import styles from "./page.module.css";
+import { useState } from "react";
+import Logo from "../../components/Logo";
+import { createClient, isSupabaseConfigured, SUPABASE_SETUP_MESSAGE } from "../../lib/supabase";
 
-export default function ForgotPasswordPage() {
-  const supabase = createClient();
-
+export default function ForgotPassword() {
   const [email, setEmail] = useState("");
+  const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
-  const [success, setSuccess] = useState("");
-
-  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-
-    setError("");
-    setSuccess("");
-
-    if (!email.trim()) {
-      setError("Please enter your email address.");
-      return;
-    }
-
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault(); setMessage("");
+    if (!email) return setMessage("Enter your email address.");
+    if (!isSupabaseConfigured()) return setMessage(SUPABASE_SETUP_MESSAGE);
     setLoading(true);
-
-    const { error } = await supabase.auth.resetPasswordForEmail(
-      email.trim(),
-      {
-        redirectTo: `${window.location.origin}/reset-password`,
-      }
-    );
-
-    if (error) {
-      setError(error.message);
-      setLoading(false);
-      return;
-    }
-
-    setSuccess(
-      "If an account exists with this email, you will receive a password reset link shortly."
-    );
-
+    const supabase = createClient();
+    const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo: `${window.location.origin}/reset-password` });
     setLoading(false);
-  }
-
-  return (
-    <main className={styles.page}>
-      <div className={styles.backgroundShapeOne} />
-      <div className={styles.backgroundShapeTwo} />
-
-      <section className={styles.authCard}>
-        <div className={styles.brand}>
-          <div className={styles.brandMark}>T</div>
-
-          <div>
-            <div className={styles.brandName}>TraceMind</div>
-            <div className={styles.brandTagline}>
-              Personal memory engine
-            </div>
-          </div>
-        </div>
-
-        <Link href="/login" className={styles.backLink}>
-          ← Back to sign in
-        </Link>
-
-        <div className={styles.heading}>
-          <div className={styles.iconCircle}>?</div>
-
-          <h1>Forgot your password?</h1>
-
-          <p>
-            Enter the email address connected to your TraceMind account
-            and we'll send you a secure reset link.
-          </p>
-        </div>
-
-        {error && (
-          <div className={styles.errorBox} role="alert">
-            <span className={styles.errorIcon}>!</span>
-            <span>{error}</span>
-          </div>
-        )}
-
-        {success && (
-          <div className={styles.successBox} role="status">
-            <span className={styles.successIcon}>✓</span>
-            <span>{success}</span>
-          </div>
-        )}
-
-        <form onSubmit={handleSubmit} className={styles.form}>
-          <div className={styles.field}>
-            <label htmlFor="email">Email address</label>
-
-            <input
-              id="email"
-              type="email"
-              value={email}
-              onChange={(event) => setEmail(event.target.value)}
-              placeholder="you@example.com"
-              autoComplete="email"
-              disabled={loading}
-            />
-          </div>
-
-          <button
-            type="submit"
-            className={styles.primaryButton}
-            disabled={loading}
-          >
-            {loading ? (
-              <>
-                <span className={styles.spinner} />
-                Sending link...
-              </>
-            ) : (
-              "Send reset link"
-            )}
-          </button>
-        </form>
-
-        <p className={styles.loginText}>
-          Remember your password?{" "}
-          <Link href="/login">Sign in</Link>
-        </p>
-
-        <div className={styles.footer}>
-          Your account security matters to us.
-        </div>
-      </section>
-    </main>
-  );
+    setMessage(error ? error.message : "If an account exists for this email, a reset link has been sent.");
+  };
+  return <main className="auth-page auth-single"><section className="auth-card"><div className="auth-form">
+    <Logo /><h1>Reset your password</h1><p className="muted">Enter your email and we’ll send you a secure reset link.</p>
+    <form onSubmit={submit}><label className="label">Email</label><input className="input" type="email" value={email} onChange={e=>setEmail(e.target.value)} placeholder="you@example.com" autoComplete="email"/><button className="primary-btn" disabled={loading}>{loading?"Sending…":"Send reset link"}</button></form>
+    {message && <p className="auth-message">{message}</p>}<p className="muted auth-bottom"><Link className="auth-link" href="/login">Back to log in</Link></p>
+  </div></section></main>;
 }

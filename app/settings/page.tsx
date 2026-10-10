@@ -115,19 +115,64 @@ export default function SettingsPage() {
 
   async function deleteAccount() {
     const confirmed = window.confirm(
-      "Are you sure you want to delete your account? This action cannot be undone."
+      "Delete your TraceMind account permanently?\n\nYour memories, reminders, uploaded files, profile, and authentication account will be deleted. This cannot be undone."
     );
 
     if (!confirmed) return;
 
-    setError(
-      "For security, account deletion should be handled through your Supabase server-side deletion flow."
+    const finalConfirmation = window.confirm(
+      "FINAL CONFIRMATION\n\nPress OK only if you are absolutely sure."
     );
+
+    if (!finalConfirmation) return;
+
+    setSaving(true);
+    setMessage("");
+    setError("");
+
+    try {
+      const {
+  data: { session },
+  error: sessionError,
+} = await supabase.auth.getSession();
+
+if (sessionError || !session) {
+  throw new Error(
+    "Your session has expired. Please sign in again before deleting your account."
+  );
+}
+
+const response = await fetch("/api/account/delete", {
+  method: "POST",
+  credentials: "include",
+  headers: {
+    Authorization: `Bearer ${session.access_token}`,
+  },
+
+      });
+
+      const result = await response.json().catch(() => ({}));
+
+      if (!response.ok || !result.success) {
+        throw new Error(result.error || "Account deletion failed.");
+      }
+
+      await supabase.auth.signOut();
+      window.location.replace("/login?deleted=true");
+    } catch (error) {
+      console.error("Delete account error:", error);
+      setError(
+        error instanceof Error ? error.message : "Could not delete your account."
+      );
+    } finally {
+      setSaving(false);
+    }
   }
 
   if (loading) {
     return (
-          <div className="settings-loading">
+      <>
+        <div className="settings-loading">
           <div className="loading-spinner" />
           <p>Loading settings...</p>
         </div>
@@ -158,10 +203,12 @@ export default function SettingsPage() {
             }
           }
         `}</style>
-      );
+      </>
+    );
   }
 
   return (
+    <>
       <div className="settings-page">
         {/* HEADER */}
         <div className="settings-header">
@@ -930,6 +977,7 @@ export default function SettingsPage() {
           }
         }
       `}</style>
+    </>
   );
 }
 

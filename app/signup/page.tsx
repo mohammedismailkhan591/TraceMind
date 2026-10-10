@@ -3,11 +3,9 @@
 import Link from "next/link";
 import { useState } from "react";
 import Logo from "../../components/Logo";
-import { createClient } from "../../lib/supabase";
+import { createClient, isSupabaseConfigured, SUPABASE_SETUP_MESSAGE } from "../../lib/supabase";
 
 export default function Signup() {
-  const supabase = createClient();
-
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -33,6 +31,7 @@ export default function Signup() {
 
     setLoading(true);
 
+    const supabase = createClient();
     const { error } = await supabase.auth.signUp({
       email,
       password,
@@ -61,8 +60,13 @@ export default function Signup() {
 
   const handleGoogleSignup = async () => {
     setMessage("");
+    if (!isSupabaseConfigured()) {
+      setMessage(SUPABASE_SETUP_MESSAGE);
+      return;
+    }
     setLoading(true);
 
+    const supabase = createClient();
     const { error } = await supabase.auth.signInWithOAuth({
       provider: "google",
       options: {

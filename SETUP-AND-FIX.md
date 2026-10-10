@@ -1,57 +1,53 @@
-# TraceMind — Storage + Capture fix
+# TraceMind setup
 
-This package fixes the real Capture flow and gives the Capture page a more professional UI.
+## 1. Install
 
-## 1. Supabase storage
+```bash
+npm install
+```
 
-Open the **same Supabase project used by `.env.local`**.
+## 2. Configure Supabase
 
-Go to **SQL Editor → New query** and paste/run the complete file:
+Copy `.env.local.example` to `.env.local` and replace both values with the values from:
 
-`supabase/storage.sql`
+Supabase Dashboard -> your project -> Project Settings -> API
 
-The last query should return one row:
+Required variables:
 
-`memory-assets | memory-assets | false`
+```env
+NEXT_PUBLIC_SUPABASE_URL=https://YOUR_PROJECT_REF.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=YOUR_SUPABASE_ANON_KEY
+```
 
-If it does not, stop and copy the exact SQL error.
+Restart the development server after changing `.env.local`:
 
-## 2. Replace the Capture page
+```bash
+npm run dev
+```
 
-Replace:
+If these values are missing, TraceMind will still render its UI instead of crashing, but authentication, memories, capture storage, and reminders cannot work until Supabase is configured.
 
-`app/capture/page.tsx`
+## TraceMind visual structure refresh (October 2026)
 
-with the version in this package.
+This update refreshes the shared application navigation and adds a dedicated `/timeline` page for browsing recent memories chronologically. Each memory detail page now includes a memory-context view, key facts, source information, and a record-based timeline showing saved/source/deadline/updated events where those fields exist.
 
-## 3. Check `.env.local`
+### Important notes
+- The timeline is based on the existing `memories` table and the fields already used by this project. It does not invent a full audit log; the memory detail page explicitly explains that only events supported by stored fields are shown.
+- The project still expects the existing Supabase configuration in `.env.local`. Do not commit API keys or secrets.
+- Smart Capture AI is implemented as an optional Gemini free-tier integration; see the setup section below.
 
-The project URL must be from the same Supabase project where the bucket exists:
+## 3. Optional Smart Capture AI (Gemini free tier)
 
-`NEXT_PUBLIC_SUPABASE_URL=...`
+Smart Capture can suggest a title, category, summary, extracted text, tags, and a deadline for screenshots, PDFs, and pasted text. URL-only analysis is deliberately cautious: it does not claim to read the web page unless page content is supplied.
 
-`NEXT_PUBLIC_SUPABASE_ANON_KEY=...`
+1. Create a Gemini API key in Google AI Studio: https://aistudio.google.com/app/apikey
+2. Add it to your local `.env.local` file (server-side only):
 
-Do not put the Supabase service-role key in a browser/client environment.
+```env
+GEMINI_API_KEY=your_gemini_api_key_here
+```
 
-## 4. Restart Next.js
+3. Restart `npm run dev`.
+4. On Capture, add your item and click **Analyze with AI**. Review every suggestion, especially deadlines, before saving.
 
-Stop the terminal with `Ctrl+C`, then run:
-
-`npm.cmd run dev`
-
-## 5. Test
-
-Log in → Capture → Screenshot → choose an image → Save memory.
-
-Then verify:
-
-- Storage → `memory-assets` → your user-id folder
-- Table Editor → `memories`
-- Table Editor → `memory_assets`
-
-The app uses the path:
-
-`YOUR_USER_ID/unique-file-name.ext`
-
-so storage policies can isolate each user's files.
+The Gemini API has a free tier with model and rate limits that may change. Do not use `NEXT_PUBLIC_GEMINI_API_KEY`; never commit `.env.local` or share your key. AI is optional: capture and save can still be used without configuring it. Supported AI files are PNG, JPG, WEBP, and PDF up to 8 MB. Voice transcription and live web-page fetching are not part of this first AI step.

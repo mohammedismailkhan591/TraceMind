@@ -17,12 +17,12 @@ TraceMind is a personal information memory engine. It is designed to capture scr
 - Supabase production database schema
 - User-specific Row Level Security foundation
 - Storage model for uploaded assets
-- OpenAI environment variable ready for AI processing
+- Optional Gemini free-tier Smart Capture analysis (screenshots, PDFs, and pasted text)
 
 ## Run locally
 
 1. Install Node.js 20+.
-2. Copy `.env.example` to `.env.local`.
+2. Copy `.env.local.example` to `.env.local`.
 3. Add your Supabase URL and anon key.
 4. Create a Supabase project.
 5. Run `supabase/schema.sql` in the Supabase SQL Editor.
@@ -43,7 +43,7 @@ Open `http://localhost:3000`.
 
 ## Important
 
-The UI in this package is the product foundation. The database schema is real and ready for Supabase, but the authentication buttons and AI extraction endpoint still need to be wired to your project's credentials before public deployment.
+Configure Supabase before testing authenticated pages. Smart Capture AI is optional and requires a server-only `GEMINI_API_KEY`; without it, saving works but AI analysis is unavailable. The AI endpoint checks the current Supabase user session.
 
 Do not put secret API keys in `NEXT_PUBLIC_*` variables.
 
@@ -51,9 +51,9 @@ Do not put secret API keys in `NEXT_PUBLIC_*` variables.
 
 The next implementation layer should connect:
 
-Capture -> Supabase Storage -> OCR/PDF extraction -> OpenAI structured extraction -> memories table -> embeddings -> semantic search -> reminders.
+Capture -> Supabase Storage -> Gemini structured extraction -> memories table -> semantic search -> reminders. The first AI step does not yet transcribe voice notes or fetch full web pages from URLs.
 
-For social login, enable Google and Facebook providers in Supabase Authentication and connect the callback URL for your Vercel domain.
+For social login, enable the Google provider in Supabase Authentication and configure the callback URL for your deployment domain.
 
 ## Product principle
 

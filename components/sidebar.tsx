@@ -4,17 +4,11 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 const items = [
-  {
-    label: "Dashboard",
-    href: "/dashboard",
-    icon: (
-      <svg viewBox="0 0 24 24" aria-hidden="true">
-        <rect x="3.5" y="3.5" width="7" height="7" rx="1.5" />
-        <rect x="13.5" y="3.5" width="7" height="7" rx="1.5" />
-        <rect x="3.5" y="13.5" width="7" height="7" rx="1.5" />
-        <rect x="13.5" y="13.5" width="7" height="7" rx="1.5" />
-      </svg>
-    ),
+ const items: {
+  label: string;
+  href: "/dashboard" | "/capture" | "/memories" | "/timeline" | "/reminders";
+  icon: React.ReactNode;
+}[] = [
   },
   {
     label: "Capture",

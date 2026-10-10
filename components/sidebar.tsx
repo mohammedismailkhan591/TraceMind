@@ -3,13 +3,11 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
-const items = [
- const items: {
+const items: {
   label: string;
-  href: "/dashboard" | "/capture" | "/memories" | "/timeline" | "/reminders";
+  href: `/dashboard` | `/capture` | `/memories` | `/timeline` | `/reminders`;
   icon: React.ReactNode;
 }[] = [
-  },
   {
     label: "Capture",
     href: "/capture",
@@ -73,7 +71,7 @@ export default function Sidebar() {
         {items.map((item) => (
           <Link
             key={item.href}
-            href={item.href}
+            href={item.href as "/dashboard" | "/capture" | "/memories" | "/timeline" | "/reminders"}
             className={`tm-nav-item ${active(item.href) ? "is-active" : ""}`}
             aria-current={active(item.href) ? "page" : undefined}
             title={item.label}

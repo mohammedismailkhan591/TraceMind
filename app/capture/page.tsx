@@ -62,6 +62,7 @@ export default function Capture() {
   const supabase = createClient();
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const audioInputRef = useRef<HTMLInputElement>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const recordingTimerRef = useRef<ReturnType<typeof setInterval> | null>(
     null
@@ -89,6 +90,7 @@ export default function Capture() {
     type: "success" | "error";
     text: string;
   } | null>(null);
+  const [aiRetryCount, setAiRetryCount] = useState(0);
 
   // Voice recording
   const [recording, setRecording] = useState(false);
@@ -126,6 +128,10 @@ export default function Capture() {
     if (audioUrlRef.current) {
       URL.revokeObjectURL(audioUrlRef.current);
       audioUrlRef.current = null;
+    }
+
+    if (audioInputRef.current) {
+      audioInputRef.current.value = "";
     }
 
     setRecording(false);
@@ -172,6 +178,38 @@ export default function Capture() {
     event: ChangeEvent<HTMLInputElement>
   ) {
     selectFile(event.target.files?.[0] ?? null);
+  }
+
+  function handleAudioFileChange(
+    event: ChangeEvent<HTMLInputElement>
+  ) {
+    const selected = event.target.files?.[0] ?? null;
+
+    if (!selected) {
+      return;
+    }
+
+    if (!selected.type.startsWith("audio/") && !/\.(mp3|wav|m4a|aac|ogg|webm)$/i.test(selected.name)) {
+      setStatus({ type: "error", text: "Please choose a valid audio file such as MP3, WAV, M4A, OGG, or WebM." });
+      return;
+    }
+
+    const objectUrl = URL.createObjectURL(selected);
+
+    if (audioUrlRef.current) {
+      URL.revokeObjectURL(audioUrlRef.current);
+    }
+
+    audioUrlRef.current = objectUrl;
+    setAudioBlob(selected);
+    setAudioUrl(objectUrl);
+    setRecording(false);
+    stopRecordingTimer();
+    resetStatus();
+
+    if (!title.trim()) {
+      setTitle(selected.name.replace(/\.[^/.]+$/, ""));
+    }
   }
 
   function isValidFile(selected: File) {
@@ -405,18 +443,22 @@ export default function Capture() {
 
   async function analyzeWithAI() {
     resetStatus();
-    if (!file && !text.trim() && !link.trim()) {
-      setStatus({ type: "error", text: "Add text, a link, screenshot, or PDF before using AI analysis." });
+    if (!file && !text.trim() && !link.trim() && !audioBlob) {
+      setStatus({ type: "error", text: "Add text, a link, screenshot, PDF, or voice note before using AI analysis." });
       return;
     }
-    if (file && file.size > 8 * 1024 * 1024) {
+    const sourceFile = file ?? (audioBlob ? (audioBlob instanceof File ? audioBlob : new File([audioBlob], `voice-${Date.now()}.webm`, { type: audioBlob.type || "audio/webm" })) : null);
+    if (sourceFile && sourceFile.size > 8 * 1024 * 1024) {
       setStatus({ type: "error", text: "For AI analysis, choose a file smaller than 8 MB. You can still save a larger file without AI." });
       return;
     }
     setAiLoading(true);
     try {
       let fileBase64 = "";
-      if (file) {
+      let mimeType = "";
+
+      if (sourceFile) {
+        mimeType = sourceFile.type;
         fileBase64 = await new Promise<string>((resolve, reject) => {
           const reader = new FileReader();
           reader.onload = () => {
@@ -424,16 +466,34 @@ export default function Capture() {
             resolve(result.includes(",") ? result.slice(result.indexOf(",") + 1) : result);
           };
           reader.onerror = () => reject(new Error("Could not read the selected file."));
-          reader.readAsDataURL(file);
+          reader.readAsDataURL(sourceFile);
         });
       }
+
       const response = await fetch("/api/ai/analyze", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ captureType, text, link, fileBase64, mimeType: file?.type ?? "" }),
+        body: JSON.stringify({ captureType, text, link, fileBase64, mimeType: mimeType || (audioBlob ? audioBlob.type : "") }),
       });
       const result = await response.json();
-      if (!response.ok) throw new Error(result.error || "AI analysis failed.");
+
+      if (!response.ok) {
+        const message = result?.error || "AI analysis failed.";
+        const lower = String(message).toLowerCase();
+        const transient = lower.includes("high demand") || lower.includes("temporarily") || lower.includes("rate limit") || lower.includes("overloaded") || lower.includes("could not analyze");
+
+        if (transient && aiRetryCount < 2) {
+          setAiRetryCount((count) => count + 1);
+          setStatus({ type: "error", text: `${message} Retrying automatically...` });
+          setTimeout(() => {
+            void analyzeWithAI();
+          }, 1200);
+          return;
+        }
+
+        throw new Error(message);
+      }
+
       if (result.title) setTitle(result.title);
       if (result.category) setCategory(result.category);
       if (result.summary) setSummary(result.summary);
@@ -446,9 +506,11 @@ export default function Capture() {
           setDeadline(local.toISOString().slice(0, 16));
         }
       }
-      if (result.extractedText && (captureType === "text" || !text.trim())) setText(result.extractedText);
+      if (result.extractedText && (captureType === "text" || captureType === "voice" || !text.trim())) setText(result.extractedText);
+      setAiRetryCount(0);
       setStatus({ type: "success", text: "AI suggestions are ready. Review the title, category, summary and deadline before saving." });
     } catch (error) {
+      setAiRetryCount(0);
       setStatus({ type: "error", text: error instanceof Error ? error.message : "AI analysis failed." });
     } finally {
       setAiLoading(false);
@@ -598,15 +660,17 @@ export default function Capture() {
       ) {
         const uploadFile =
           file ??
-          new File(
-            [audioBlob!],
-            `voice-${Date.now()}.webm`,
-            {
-              type:
-                audioBlob!.type ||
-                "audio/webm",
-            }
-          );
+          (audioBlob instanceof File
+            ? audioBlob
+            : new File(
+                [audioBlob!],
+                `voice-${Date.now()}.webm`,
+                {
+                  type:
+                    audioBlob!.type ||
+                    "audio/webm",
+                }
+              ));
 
         const cleanName =
           uploadFile.name.replace(
@@ -1192,17 +1256,47 @@ export default function Capture() {
 
                       <small className="voice-format-note">WebM / Opus • private upload when you save</small>
 
-                      <button
-                        type="button"
-                        className="voice-again"
-                        onClick={
-                          clearRecording
-                        }
-                      >
-                        Record again
-                      </button>
+                      <div className="voice-actions">
+                        <button
+                          type="button"
+                          className="voice-again"
+                          onClick={
+                            clearRecording
+                          }
+                        >
+                          Record again
+                        </button>
+
+                        <button
+                          type="button"
+                          className="voice-upload-button"
+                          onClick={() => audioInputRef.current?.click()}
+                        >
+                          Upload audio
+                        </button>
+                      </div>
                     </>
                   )}
+
+                {!recording && !audioUrl && (
+                  <div className="voice-upload-row">
+                    <button
+                      type="button"
+                      className="voice-upload-button"
+                      onClick={() => audioInputRef.current?.click()}
+                    >
+                      Upload audio file
+                    </button>
+                  </div>
+                )}
+
+                <input
+                  ref={audioInputRef}
+                  type="file"
+                  hidden
+                  accept="audio/*,.mp3,.wav,.m4a,.aac,.ogg,.webm"
+                  onChange={handleAudioFileChange}
+                />
               </div>
             )}
 

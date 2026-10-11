@@ -1,10 +1,12 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { createClient } from "../../lib/supabase";
 
 export default function SettingsPage() {
   const supabase = useMemo(() => createClient(), []);
+  const router = useRouter();
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -37,6 +39,7 @@ export default function SettingsPage() {
     if (!user) {
       setError("Your session has expired. Please login again.");
       setLoading(false);
+      router.replace("/login");
       return;
     }
 

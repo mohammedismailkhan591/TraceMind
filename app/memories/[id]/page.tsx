@@ -1,5 +1,6 @@
 import Link from "next/link";
-import { createClient } from "../../../lib/supabase";
+import { isSupabaseConfigured } from "../../../lib/supabase";
+import { createServerSupabaseClient } from "../../../lib/supabase/server";
 
 function dateTime(value: string | null | undefined) {
   if (!value) return "Not set";
@@ -19,9 +20,17 @@ function sourceLabel(value: string | null | undefined) {
 
 export default async function MemoryDetail({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const supabase = createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return <div className="memory-detail-page"><div className="detail-empty"><span className="eyebrow">TRACEMIND ACCOUNT</span><h1>Your session has expired</h1><p>Log in again to view this memory and its history.</p><Link href="/login" className="tm-primary">Log in</Link></div></div>;
+
+  if (!isSupabaseConfigured()) {
+    return <div className="memory-detail-page"><div className="detail-empty"><span className="eyebrow">TRACEMIND ACCOUNT</span><h1>Supabase is not configured</h1><p>Set up your Supabase project URL and anon key to view memories.</p><Link href="/login" className="tm-primary">Back to login</Link></div></div>;
+  }
+
+  const supabase = await createServerSupabaseClient();
+  const { data: { user }, error: userError } = await supabase.auth.getUser();
+
+  if (userError || !user) {
+    return <div className="memory-detail-page"><div className="detail-empty"><span className="eyebrow">TRACEMIND ACCOUNT</span><h1>Your session has expired</h1><p>Log in again to view this memory and its history.</p><Link href="/login" className="tm-primary">Log in</Link></div></div>;
+  }
 
   const { data: memory, error } = await supabase.from("memories").select("id,title,summary,content,category,source_type,source_url,deadline,is_favorite,created_at,updated_at").eq("id", id).eq("user_id", user.id).single();
   if (error || !memory) return <div className="memory-detail-page"><Link href="/memories" className="tm-back">← All memories</Link><div className="detail-empty"><div className="empty-icon">?</div><h1>Memory not found</h1><p>This item may have been removed, or you may not have access to it.</p><Link href="/memories" className="tm-primary">Back to memories</Link></div></div>;

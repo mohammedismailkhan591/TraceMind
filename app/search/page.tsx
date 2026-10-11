@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { createClient } from "../../lib/supabase";
 
 type Memory = {
@@ -29,6 +30,7 @@ const categories = [
 ];
 
 export default function SearchPage() {
+  const router = useRouter();
   const [memories, setMemories] = useState<Memory[]>([]);
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState("All");
@@ -51,6 +53,7 @@ export default function SearchPage() {
     if (!user) {
       setMemories([]);
       setLoading(false);
+      router.replace("/login");
       return;
     }
 

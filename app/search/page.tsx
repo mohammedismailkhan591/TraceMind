@@ -9,6 +9,7 @@ type Memory = {
   id: string;
   title: string;
   summary: string | null;
+  content: string | null;
   category: string | null;
   source_type: string;
   source_url: string | null;
@@ -60,7 +61,7 @@ export default function SearchPage() {
     const { data, error } = await supabase
       .from("memories")
       .select(
-        "id,title,summary,category,source_type,source_url,created_at,deadline,is_favorite"
+        "id,title,summary,content,category,source_type,source_url,created_at,deadline,is_favorite"
       )
       .eq("user_id", user.id)
       .order("created_at", { ascending: false });
@@ -79,6 +80,7 @@ export default function SearchPage() {
       const searchableText = [
         memory.title,
         memory.summary,
+        memory.content,
         memory.category,
         memory.source_type,
       ]

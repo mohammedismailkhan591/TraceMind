@@ -1,7 +1,17 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { createServerClient } from "@supabase/ssr";
-import { allowedMimeTypes, allowedAudioMimeTypes, buildAnalysisPrompt, getGeminiModelCandidates, isAudioMimeType, normalizeAnalysisResult } from "../../../../lib/ai-analysis";
+import {
+  allowedMimeTypes,
+  allowedAudioMimeTypes,
+  buildAnalysisPrompt,
+  getGeminiModelCandidates,
+  isAudioMimeType,
+  isRetryableModelError,
+  normalizeAnalysisResult,
+  normalizeMimeType,
+  validateMediaNotMisclassified,
+} from "../../../../lib/ai-analysis";
 
 export const runtime = "nodejs";
 
@@ -39,12 +49,19 @@ export async function POST(request: Request) {
     const text = typeof body.text === "string" ? body.text.slice(0, 30000) : "";
     const link = typeof body.link === "string" ? body.link.slice(0, 2000) : "";
     const fileBase64 = typeof body.fileBase64 === "string" ? body.fileBase64 : "";
-    const mimeType = typeof body.mimeType === "string" ? body.mimeType : "";
-    const normalizedMime = mimeType.toLowerCase().split(";")[0].trim();
-    const isAudioInput = captureType === "voice" || isAudioMimeType(mimeType);
+    const rawMime = typeof body.mimeType === "string" ? body.mimeType : "";
+    const normalizedMime = normalizeMimeType(rawMime);
+    const isAudioInput = captureType === "voice" || isAudioMimeType(normalizedMime);
 
-    if (fileBase64 && !(allowedMimeTypes.has(normalizedMime) || isAudioMimeType(mimeType))) {
-      return NextResponse.json({ error: "Use a supported image, PDF, or audio file for AI analysis." }, { status: 413 });
+    if (fileBase64 && !(allowedMimeTypes.has(normalizedMime) || isAudioMimeType(normalizedMime))) {
+      return NextResponse.json({ error: "Use a supported image, PDF, or audio file for AI analysis." }, { status: 415 });
+    }
+
+    if (fileBase64) {
+      const mediaValidation = validateMediaNotMisclassified(fileBase64, normalizedMime);
+      if (!mediaValidation.valid) {
+        return NextResponse.json({ error: mediaValidation.error }, { status: 400 });
+      }
     }
 
     if (fileBase64 && fileBase64.length > 12_000_000) {
@@ -54,15 +71,17 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Add text, a link, screenshot, PDF, or voice note before asking AI to analyze it." }, { status: 400 });
     }
 
-    const prompt = buildAnalysisPrompt({ captureType, text, link, fileBase64, mimeType });
+    const prompt = buildAnalysisPrompt({ captureType, text, link, fileBase64, mimeType: normalizedMime });
     const parts: Array<Record<string, unknown>> = [{ text: prompt }];
     if (fileBase64) {
-      parts.push({ inline_data: { mime_type: mimeType, data: fileBase64 } });
+      parts.push({ inline_data: { mime_type: normalizedMime, data: fileBase64 } });
     }
 
     const modelCandidates = getGeminiModelCandidates();
     let response: Response | null = null;
     let payload: any = null;
+    let lastProviderStatus: number = 502;
+    let lastProviderMessage: string = "";
 
     for (const model of modelCandidates) {
       const modelUrl = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(apiKey)}`;
@@ -81,18 +100,29 @@ export async function POST(request: Request) {
         break;
       }
 
-      const providerMessage = typeof payload?.error?.message === "string" ? payload.error.message : "";
-      const isUnavailableModel = /model.*not.*available|not available|unsupported model|not found/i.test(providerMessage);
-      if (!isUnavailableModel) {
+      lastProviderStatus = response.status;
+      lastProviderMessage = typeof payload?.error?.message === "string" ? payload.error.message : "";
+      console.error(`Gemini provider error on model ${model} (HTTP ${response.status}):`, lastProviderMessage || "Unknown provider error");
+
+      if (!isRetryableModelError(response.status, lastProviderMessage)) {
         break;
       }
     }
 
     if (!response || !response.ok) {
-      const providerMessage = payload?.error?.message;
+      let clientMessage = "The AI service could not analyze this item. Try again later.";
+      if (lastProviderStatus === 401 || lastProviderStatus === 403) {
+        clientMessage = "AI configuration error: Invalid or unauthorized GEMINI_API_KEY.";
+      } else if (lastProviderStatus === 429) {
+        clientMessage = "The AI service is currently busy or rate-limited. Please try again in a few moments.";
+      } else if (lastProviderStatus === 400) {
+        const sanitized = (lastProviderMessage || "").replace(/key=[^&\s]+/gi, "key=REDACTED");
+        clientMessage = sanitized ? `The AI service rejected this request: ${sanitized}` : "The AI service rejected this request format.";
+      }
+
       return NextResponse.json(
-        { error: typeof providerMessage === "string" ? providerMessage : "The AI service could not analyze this item. Try again later." },
-        { status: response?.status === 429 ? 429 : 502 }
+        { error: clientMessage },
+        { status: lastProviderStatus === 429 ? 429 : (lastProviderStatus >= 400 && lastProviderStatus < 500 ? lastProviderStatus : 502) }
       );
     }
 

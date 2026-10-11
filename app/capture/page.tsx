@@ -443,51 +443,109 @@ export default function Capture() {
 
   async function analyzeWithAI() {
     resetStatus();
-    if (!file && !text.trim() && !link.trim() && !audioBlob) {
-      setStatus({ type: "error", text: "Add text, a link, screenshot, PDF, or voice note before using AI analysis." });
+
+    const originalText = text;
+
+    if (!file && !originalText.trim() && !link.trim() && !audioBlob) {
+      setStatus({
+        type: "error",
+        text: "Add text, a link, screenshot, PDF, or voice note before using AI analysis.",
+      });
       return;
     }
-    const sourceFile = file ?? (audioBlob ? (audioBlob instanceof File ? audioBlob : new File([audioBlob], `voice-${Date.now()}.webm`, { type: audioBlob.type || "audio/webm" })) : null);
+
+    const sourceFile =
+      file ??
+      (audioBlob
+        ? audioBlob instanceof File
+          ? audioBlob
+          : new File(
+              [audioBlob],
+              `voice-${Date.now()}.webm`,
+              { type: audioBlob.type || "audio/webm" }
+            )
+        : null);
+
     if (sourceFile && sourceFile.size > 8 * 1024 * 1024) {
-      setStatus({ type: "error", text: "For AI analysis, choose a file smaller than 8 MB. You can still save a larger file without AI." });
+      setStatus({
+        type: "error",
+        text: "For AI analysis, choose a file smaller than 8 MB. You can still save a larger file without AI.",
+      });
       return;
     }
+
     setAiLoading(true);
+
     try {
       let fileBase64 = "";
       let mimeType = "";
 
       if (sourceFile) {
-        mimeType = sourceFile.type;
+        // Gemini expects the base MIME type, not codec parameters.
+        mimeType = (sourceFile.type || "application/octet-stream")
+          .split(";")[0]
+          .trim();
+
         fileBase64 = await new Promise<string>((resolve, reject) => {
           const reader = new FileReader();
+
           reader.onload = () => {
             const result = String(reader.result ?? "");
-            resolve(result.includes(",") ? result.slice(result.indexOf(",") + 1) : result);
+            resolve(
+              result.includes(",")
+                ? result.slice(result.indexOf(",") + 1)
+                : result
+            );
           };
-          reader.onerror = () => reject(new Error("Could not read the selected file."));
+
+          reader.onerror = () =>
+            reject(new Error("Could not read the selected file."));
+
           reader.readAsDataURL(sourceFile);
         });
       }
 
+      const audioMimeType = (audioBlob?.type || "")
+        .split(";")[0]
+        .trim();
+
       const response = await fetch("/api/ai/analyze", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ captureType, text, link, fileBase64, mimeType: mimeType || (audioBlob ? audioBlob.type : "") }),
+        body: JSON.stringify({
+          captureType,
+          // Always send the text that existed when analysis began.
+          text: originalText,
+          link,
+          fileBase64,
+          mimeType: mimeType || audioMimeType,
+        }),
       });
+
       const result = await response.json();
 
       if (!response.ok) {
-        const message = result?.error || "AI analysis failed.";
+        const message =
+          result?.error || "AI analysis failed.";
         const lower = String(message).toLowerCase();
-        const transient = lower.includes("high demand") || lower.includes("temporarily") || lower.includes("rate limit") || lower.includes("overloaded") || lower.includes("could not analyze");
+        const transient =
+          lower.includes("high demand") ||
+          lower.includes("temporarily") ||
+          lower.includes("rate limit") ||
+          lower.includes("overloaded") ||
+          lower.includes("could not analyze");
 
         if (transient && aiRetryCount < 2) {
           setAiRetryCount((count) => count + 1);
-          setStatus({ type: "error", text: `${message} Retrying automatically...` });
+          setStatus({
+            type: "error",
+            text: `${message} Retrying automatically...`,
+          });
+
           setTimeout(() => {
             void analyzeWithAI();
           }, 1200);
+
           return;
         }
 
@@ -497,21 +555,57 @@ export default function Capture() {
       if (result.title) setTitle(result.title);
       if (result.category) setCategory(result.category);
       if (result.summary) setSummary(result.summary);
-      if (Array.isArray(result.tags)) setAiTags(result.tags.filter((tag: unknown): tag is string => typeof tag === "string"));
-      if (typeof result.isImportant === "boolean") setIsImportant(result.isImportant);
+
+      if (Array.isArray(result.tags)) {
+        setAiTags(
+          result.tags.filter(
+            (tag: unknown): tag is string =>
+              typeof tag === "string"
+          )
+        );
+      }
+
+      if (typeof result.isImportant === "boolean") {
+        setIsImportant(result.isImportant);
+      }
+
       if (result.deadlineISO) {
         const date = new Date(result.deadlineISO);
+
         if (!Number.isNaN(date.getTime())) {
-          const local = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
+          const local = new Date(
+            date.getTime() - date.getTimezoneOffset() * 60000
+          );
+
           setDeadline(local.toISOString().slice(0, 16));
         }
       }
-      if (result.extractedText && (captureType === "text" || captureType === "voice" || !text.trim())) setText(result.extractedText);
+
+      // Do not replace user-entered text. Only populate an empty text
+      // field with extracted content for non-text captures.
+      if (
+        !originalText.trim() &&
+        captureType !== "text" &&
+        typeof result.extractedText === "string" &&
+        result.extractedText.trim()
+      ) {
+        setText(result.extractedText);
+      }
+
       setAiRetryCount(0);
-      setStatus({ type: "success", text: "AI suggestions are ready. Review the title, category, summary and deadline before saving." });
+      setStatus({
+        type: "success",
+        text: "AI suggestions are ready. Review the title, category, summary and deadline before saving.",
+      });
     } catch (error) {
       setAiRetryCount(0);
-      setStatus({ type: "error", text: error instanceof Error ? error.message : "AI analysis failed." });
+      setStatus({
+        type: "error",
+        text:
+          error instanceof Error
+            ? error.message
+            : "AI analysis failed.",
+      });
     } finally {
       setAiLoading(false);
     }
@@ -631,7 +725,9 @@ export default function Capture() {
               capture_type:
                 captureType,
 
-              processing_status: summary.trim() ? "ai_analyzed" : (captureType === "text" || captureType === "link" ? "ready" : "pending"),
+              processing_status: summary.trim()
+                ? "ai_analyzed"
+                : (captureType === "text" ? "saved_without_ai" : "pending_analysis"),
               ai_tags: aiTags,
               is_important: isImportant,
             },
@@ -781,8 +877,9 @@ export default function Capture() {
        */
       setStatus({
         type: "success",
-        text:
-          "Saved. This memory is now part of your TraceMind library.",
+        text: summary.trim()
+          ? "Saved with AI analysis. This memory is now part of your TraceMind library."
+          : "Saved directly. This memory is now part of your TraceMind library.",
       });
 
       setTitle("");

@@ -18,10 +18,63 @@ export const allowedAudioMimeTypes = new Set<string>([
   'audio/webm;codecs=opus',
 ]);
 
+export function normalizeMimeType(mimeType: string | undefined): string {
+  if (!mimeType || typeof mimeType !== 'string') return '';
+  const base = mimeType.toLowerCase().split(';')[0].trim();
+  if (base === 'audio/x-wav') return 'audio/wav';
+  if (base === 'audio/mp3') return 'audio/mp3';
+  if (base === 'image/jpg') return 'image/jpeg';
+  return base;
+}
+
 export function isAudioMimeType(mimeType: string | undefined): boolean {
   if (!mimeType) return false;
-  const normalized = mimeType.toLowerCase();
+  const normalized = normalizeMimeType(mimeType);
   return allowedAudioMimeTypes.has(normalized) || normalized.startsWith('audio/');
+}
+
+export function validateMediaNotMisclassified(
+  fileBase64: string,
+  declaredMime: string
+): { valid: boolean; error?: string } {
+  if (!fileBase64) return { valid: true };
+  const prefix = fileBase64.slice(0, 32);
+  const normalized = normalizeMimeType(declaredMime);
+
+  const isPdfBytes = prefix.startsWith('JVBERi'); // %PDF-
+  const isPngBytes = prefix.startsWith('iVBORw0KGgo'); // \x89PNG
+  const isJpgBytes = prefix.startsWith('/9j/'); // \xFF\xD8\xFF
+
+  if (isAudioMimeType(normalized)) {
+    if (isPdfBytes) {
+      return { valid: false, error: 'The uploaded file is a PDF document, not an audio file.' };
+    }
+    if (isPngBytes || isJpgBytes) {
+      return { valid: false, error: 'The uploaded file is an image, not an audio file.' };
+    }
+  }
+
+  if (normalized === 'application/pdf') {
+    if (isPngBytes || isJpgBytes) {
+      return { valid: false, error: 'The uploaded file is an image, not a PDF document.' };
+    }
+  }
+
+  return { valid: true };
+}
+
+export function isRetryableModelError(status: number | undefined, providerMessage: string): boolean {
+  if (!status) return true;
+  // Non-retryable client errors:
+  if (status === 401 || status === 403 || status === 413) {
+    return false;
+  }
+  // 400 Bad Request is only retryable across models if it complains about the model identifier
+  if (status === 400) {
+    return /model.*not.*available|not available|unsupported model|not found|unknown model/i.test(providerMessage);
+  }
+  // 404 (model not found), 429 (rate limited / quota), 500, 502, 503 (server overloaded / unavailable) are retryable across fallback models
+  return true;
 }
 
 export function getGeminiModelCandidates(): string[] {
@@ -89,4 +142,3 @@ export function normalizeAnalysisResult(result: Record<string, unknown> = {}): A
     isImportant: result.isImportant === true,
   };
 }
-

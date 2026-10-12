@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import "./globals.css";
 import AppShell from "../components/AppShell";
+import WelcomeSplash from "../components/WelcomeSplash";
 
 export default function RootLayout({
   children,
@@ -10,8 +11,10 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body>
-        <AppShell>{children}</AppShell>
+        <WelcomeSplash>
+          <AppShell>{children}</AppShell>
+        </WelcomeSplash>
       </body>
     </html>
   );
-}
+} 

@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { createClient } from "../../lib/supabase";
 
 export default function ResetPasswordPage() {
@@ -9,511 +10,881 @@ export default function ResetPasswordPage() {
 
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
-  const [sessionReady, setSessionReady] = useState(false);
-  const [hasSession, setHasSession] = useState(false);
+
   const [loading, setLoading] = useState(false);
+  const [checkingSession, setCheckingSession] = useState(true);
+  const [sessionReady, setSessionReady] = useState(false);
+
   const [message, setMessage] = useState("");
-  const [success, setSuccess] = useState(false);
+  const [messageType, setMessageType] = useState<"error" | "success">(
+    "error"
+  );
+
+  const supabase = createClient();
 
   useEffect(() => {
-    const supabase = createClient();
-    let mounted = true;
+    let active = true;
 
-    async function initializeSession() {
-      try {
-        const {
-          data: { session },
-          error,
-        } = await supabase.auth.getSession();
+    async function checkSession() {
+      const params = new URLSearchParams(window.location.search);
+      const hashParams = new URLSearchParams(
+        window.location.hash.replace(/^#/, "")
+      );
 
-        if (!mounted) return;
+      const authError =
+        params.get("error_description") ||
+        params.get("error") ||
+        hashParams.get("error_description") ||
+        hashParams.get("error");
+
+      if (authError) {
+        if (active) {
+          setMessage(
+            authError.replace(/\+/g, " ")
+          );
+          setMessageType("error");
+          setCheckingSession(false);
+        }
+        return;
+      }
+
+      // Some Supabase recovery links provide tokens in the URL hash.
+      const accessToken = hashParams.get("access_token");
+      const refreshToken = hashParams.get("refresh_token");
+      const hashType = hashParams.get("type");
+
+      if (accessToken && refreshToken && hashType === "recovery") {
+        const { error } = await supabase.auth.setSession({
+          access_token: accessToken,
+          refresh_token: refreshToken,
+        });
 
         if (error) {
-          setMessage(error.message);
-          setHasSession(false);
-        } else {
-          setHasSession(Boolean(session));
+          if (active) {
+            setMessage(
+              "This password reset link is invalid or expired. Please request a new one."
+            );
+            setMessageType("error");
+            setCheckingSession(false);
+          }
+          return;
         }
-      } catch {
-        if (mounted) {
-          setHasSession(false);
-          setMessage("We couldn't verify your recovery session.");
-        }
-      } finally {
-        if (mounted) setSessionReady(true);
+
+        // Remove tokens from the visible address bar.
+        window.history.replaceState(
+          {},
+          document.title,
+          window.location.pathname
+        );
       }
+
+      const { data, error } = await supabase.auth.getSession();
+
+      if (!active) return;
+
+      if (error || !data.session) {
+        setMessage(
+          "Your reset session could not be found. Please request a new password reset link."
+        );
+        setMessageType("error");
+        setSessionReady(false);
+      } else {
+        setSessionReady(true);
+      }
+
+      setCheckingSession(false);
     }
 
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((event, session) => {
-      if (!mounted) return;
-
-      if (
-        event === "PASSWORD_RECOVERY" ||
-        event === "SIGNED_IN" ||
-        event === "INITIAL_SESSION" ||
-        event === "TOKEN_REFRESHED"
-      ) {
-        if (session) {
-          setHasSession(true);
-          setMessage("");
-        }
-      }
-
-      if (event === "SIGNED_OUT") {
-        setHasSession(false);
-      }
-    });
-
-    void initializeSession();
+    checkSession();
 
     return () => {
-      mounted = false;
-      subscription.unsubscribe();
+      active = false;
     };
-  }, []);
+  }, [supabase]);
+
+  const passwordStrength = (() => {
+    let score = 0;
+
+    if (password.length >= 8) score++;
+    if (/[A-Z]/.test(password)) score++;
+    if (/[a-z]/.test(password)) score++;
+    if (/[0-9]/.test(password)) score++;
+    if (/[^A-Za-z0-9]/.test(password)) score++;
+
+    return score;
+  })();
+
+  const strengthLabel =
+    password.length === 0
+      ? "At least 8 characters"
+      : passwordStrength <= 2
+        ? "Weak password"
+        : passwordStrength <= 4
+          ? "Good password"
+          : "Strong password";
 
   async function handleResetPassword(
-    event: FormEvent<HTMLFormElement>
+    event: React.FormEvent<HTMLFormElement>
   ) {
     event.preventDefault();
     setMessage("");
-    setSuccess(false);
-
-    if (!sessionReady) {
-      setMessage("Please wait while we verify your reset link.");
-      return;
-    }
-
-    if (!hasSession) {
-      setMessage(
-        "Your reset link could not be verified. Please request a new one."
-      );
-      return;
-    }
 
     if (password.length < 8) {
       setMessage("Your password must contain at least 8 characters.");
+      setMessageType("error");
       return;
     }
 
     if (password !== confirmPassword) {
-      setMessage("Your passwords do not match.");
+      setMessage("Your passwords don't match. Please try again.");
+      setMessageType("error");
+      return;
+    }
+
+    if (!sessionReady) {
+      setMessage(
+        "Your reset session has expired. Please request a new reset link."
+      );
+      setMessageType("error");
       return;
     }
 
     setLoading(true);
 
     try {
-      const supabase = createClient();
-
-      const { data, error } = await supabase.auth.updateUser({
+      const { error } = await supabase.auth.updateUser({
         password,
       });
 
       if (error) {
         setMessage(error.message);
+        setMessageType("error");
         return;
       }
 
-      if (!data.user) {
-        setMessage("We couldn't update your password. Please try again.");
-        return;
-      }
-
-      setSuccess(true);
-      setMessage("Your password has been updated successfully.");
-      setPassword("");
-      setConfirmPassword("");
+      setMessage("Your password has been updated successfully!");
+      setMessageType("success");
 
       await supabase.auth.signOut();
 
+      setPassword("");
+      setConfirmPassword("");
+
       window.setTimeout(() => {
-        router.replace("/login");
-      }, 2200);
+        router.replace("/login?passwordReset=success");
+      }, 1800);
     } catch {
-      setMessage("Something went wrong. Please try again.");
+      setMessage(
+        "Something went wrong. Please try again."
+      );
+      setMessageType("error");
     } finally {
       setLoading(false);
     }
   }
 
-  const strength =
-    password.length >= 12
-      ? 4
-      : password.length >= 10
-        ? 3
-        : password.length >= 8
-          ? 2
-          : password.length >= 4
-            ? 1
-            : 0;
-
-  const inputClass =
-    "w-full rounded-[13px] border border-[#dce3f0] bg-[#eaf1ff] py-[14px] pl-4 pr-[76px] text-[14px] text-[#24233b] outline-none transition-all duration-200 placeholder:text-[#909bb0] hover:border-[#c7c5f7] focus:border-[#7765ed] focus:bg-white focus:ring-4 focus:ring-[#7765ed]/10";
-
   return (
-    <main className="tm-reset relative flex min-h-screen items-center justify-center overflow-hidden bg-[#f7f8fc] px-4 py-10 text-[#171a2e] sm:px-6">
-      {/* Soft lavender background */}
-      <div className="pointer-events-none absolute inset-0 overflow-hidden">
-        <div className="tm-glow absolute -left-40 -top-40 h-[400px] w-[400px] rounded-full bg-[#dcd5ff]/35 blur-[100px]" />
-        <div className="tm-glow tm-glow-delay absolute -bottom-40 -right-40 h-[440px] w-[440px] rounded-full bg-[#e6dcff]/45 blur-[110px]" />
-      </div>
-
-      <section className="tm-card relative z-10 w-full max-w-[480px] rounded-[26px] border border-white bg-white/95 px-6 py-8 shadow-[0_24px_80px_-35px_rgba(46,43,89,0.20)] backdrop-blur-xl sm:px-7 sm:py-9">
-        {/* Brand */}
-        <button
-          type="button"
-          onClick={() => router.push("/")}
-          aria-label="Go to TraceMind home"
-          className="group mb-7 inline-flex items-center gap-1.5 rounded-lg text-[14px] font-semibold tracking-[-0.5px] text-[#24233b] outline-none transition hover:opacity-75 focus-visible:ring-4 focus-visible:ring-[#7765ed]/15"
-        >
-          <span className="flex h-[22px] w-[22px] items-center justify-center rounded-[7px] bg-gradient-to-br from-[#7968f0] to-[#4934d5] text-[13px] font-bold text-white shadow-sm">
-            T
-          </span>
-          <span>
-            Trace<span className="text-[#705ce7]">Mind</span>
-          </span>
-        </button>
-
-        {/* Heading */}
-        <div className="mb-7">
-          <div className="mb-3 inline-flex items-center gap-2 rounded-full bg-[#f2efff] px-3 py-1.5 text-[10px] font-bold uppercase tracking-[1.3px] text-[#6e5ade]">
-            <svg
-              viewBox="0 0 24 24"
-              fill="none"
-              className="h-3.5 w-3.5"
-              stroke="currentColor"
-              strokeWidth="1.8"
-              aria-hidden="true"
-            >
-              <rect x="5" y="10" width="14" height="11" rx="2.5" />
-              <path d="M8 10V7a4 4 0 0 1 8 0v3" strokeLinecap="round" />
-            </svg>
-            Secure account recovery
-          </div>
-
-          <h1 className="text-[34px] font-bold leading-[1.16] tracking-[-1.8px] text-[#171a2e] sm:text-[38px]">
-            Create a new
-            <br />
-            password
-          </h1>
-
-          <p className="mt-3 text-[14px] leading-6 text-[#7d879d]">
-            Choose a strong password to secure your account and get back
-            to everything you've saved in TraceMind.
-          </p>
-        </div>
-
-        {/* Session loading */}
-        {!sessionReady ? (
-          <div className="flex min-h-[210px] flex-col items-center justify-center rounded-2xl border border-[#eeeafc] bg-[#faf9ff]">
-            <div className="mb-4 h-10 w-10 animate-spin rounded-full border-[3px] border-[#e6e0ff] border-t-[#6c58e5]" />
-            <p className="text-[14px] font-semibold text-[#494562]">
-              Verifying your reset link
-            </p>
-            <p className="mt-1.5 text-[12px] text-[#9895ad]">
-              Just a moment...
-            </p>
-          </div>
-        ) : !hasSession ? (
-          <div className="rounded-[16px] border border-[#f2dfb5] bg-[#fffaf0] p-5">
-            <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-xl bg-[#fff0cf] text-[#ad761b]">
-              <svg
-                viewBox="0 0 24 24"
-                fill="none"
-                className="h-5 w-5"
-                stroke="currentColor"
-                strokeWidth="1.8"
-                aria-hidden="true"
-              >
-                <circle cx="12" cy="12" r="9" />
-                <path d="M12 8v5m0 3h.01" strokeLinecap="round" />
-              </svg>
-            </div>
-
-            <h2 className="text-[17px] font-bold tracking-[-0.5px] text-[#39334a]">
-              Your reset link has expired
-            </h2>
-
-            <p className="mt-2 text-[13px] leading-6 text-[#827968]">
-              We couldn't verify your password recovery session. Request
-              a fresh link to continue resetting your password.
-            </p>
-
-            {message && (
-              <p className="mt-3 break-words text-[11px] leading-5 text-[#a07832]">
-                {message}
-              </p>
-            )}
-
-            <button
-              type="button"
-              onClick={() => router.push("/forgot-password")}
-              className="mt-5 flex w-full items-center justify-center gap-2 rounded-[12px] bg-gradient-to-r from-[#6054e8] to-[#4933d5] px-4 py-3.5 text-[13px] font-bold text-white shadow-[0_7px_18px_rgba(89,72,221,0.22)] transition duration-200 hover:-translate-y-0.5 hover:shadow-[0_10px_24px_rgba(89,72,221,0.30)]"
-            >
-              Request a new reset link
-              <span aria-hidden="true">→</span>
-            </button>
-          </div>
-        ) : (
-          <form onSubmit={handleResetPassword} className="space-y-5">
-            {/* New password */}
-            <div>
-              <label
-                htmlFor="password"
-                className="mb-2.5 block text-[11px] font-bold uppercase tracking-[1.2px] text-[#41445c]"
-              >
-                New password
-              </label>
-
-              <div className="relative">
-                <input
-                  id="password"
-                  type={showPassword ? "text" : "password"}
-                  autoComplete="new-password"
-                  required
-                  minLength={8}
-                  value={password}
-                  onChange={(event) => setPassword(event.target.value)}
-                  placeholder="Enter your new password"
-                  className={inputClass}
-                />
-
-                <button
-                  type="button"
-                  onClick={() => setShowPassword((value) => !value)}
-                  aria-label={showPassword ? "Hide password" : "Show password"}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 rounded-lg px-2.5 py-1.5 text-[11px] font-bold text-[#6655dc] transition hover:bg-[#f0edff]"
-                >
-                  {showPassword ? "Hide" : "Show"}
-                </button>
-              </div>
-
-              {/* Password strength */}
-              <div className="mt-3 flex items-center gap-1.5">
-                {[1, 2, 3, 4].map((level) => (
-                  <span
-                    key={level}
-                    className={`h-[4px] flex-1 rounded-full transition-colors duration-300 ${
-                      level <= strength
-                        ? strength >= 4
-                          ? "bg-emerald-400"
-                          : strength >= 3
-                            ? "bg-[#8170ec]"
-                            : strength >= 2
-                              ? "bg-[#a89bf3]"
-                              : "bg-amber-300"
-                        : "bg-[#e9eaf2]"
-                    }`}
-                  />
-                ))}
-
-                <span className="ml-2 min-w-[66px] text-right text-[10px] text-[#9296aa]">
-                  {password.length === 0
-                    ? "8+ characters"
-                    : password.length < 8
-                      ? "Too short"
-                      : password.length < 10
-                        ? "Good"
-                        : password.length < 12
-                          ? "Strong"
-                          : "Very strong"}
-                </span>
-              </div>
-            </div>
-
-            {/* Confirm password */}
-            <div>
-              <label
-                htmlFor="confirmPassword"
-                className="mb-2.5 block text-[11px] font-bold uppercase tracking-[1.2px] text-[#41445c]"
-              >
-                Confirm password
-              </label>
-
-              <div className="relative">
-                <input
-                  id="confirmPassword"
-                  type={showConfirmPassword ? "text" : "password"}
-                  autoComplete="new-password"
-                  required
-                  minLength={8}
-                  value={confirmPassword}
-                  onChange={(event) => setConfirmPassword(event.target.value)}
-                  placeholder="Re-enter your new password"
-                  className={inputClass}
-                />
-
-                <button
-                  type="button"
-                  onClick={() =>
-                    setShowConfirmPassword((value) => !value)
-                  }
-                  aria-label={
-                    showConfirmPassword ? "Hide password" : "Show password"
-                  }
-                  className="absolute right-3 top-1/2 -translate-y-1/2 rounded-lg px-2.5 py-1.5 text-[11px] font-bold text-[#6655dc] transition hover:bg-[#f0edff]"
-                >
-                  {showConfirmPassword ? "Hide" : "Show"}
-                </button>
-              </div>
-
-              {confirmPassword.length > 0 && (
-                <p
-                  className={`mt-2 text-[11px] font-medium ${
-                    password === confirmPassword
-                      ? "text-emerald-600"
-                      : "text-[#9296aa]"
-                  }`}
-                >
-                  {password === confirmPassword
-                    ? "✓ Passwords match"
-                    : "Passwords do not match yet"}
-                </p>
-              )}
-            </div>
-
-            {/* Feedback */}
-            {message && (
-              <div
-                role="status"
-                aria-live="polite"
-                className={`flex items-start gap-3 rounded-[13px] border px-4 py-3.5 text-[12px] leading-5 ${
-                  success
-                    ? "border-[#c9ecd9] bg-[#f0fbf5] text-[#18794e]"
-                    : "border-[#dcd9ff] bg-[#f4f2ff] text-[#6255cf]"
-                }`}
-              >
-                <span className="mt-px font-bold">
-                  {success ? "✓" : "i"}
-                </span>
-                <span>{message}</span>
-              </div>
-            )}
-
-            {/* Submit */}
-            <button
-              type="submit"
-              disabled={loading || !sessionReady || !hasSession || success}
-              className="tm-submit group relative flex w-full items-center justify-center gap-2.5 overflow-hidden rounded-[13px] bg-gradient-to-r from-[#6054e8] to-[#4030d8] px-5 py-[15px] text-[14px] font-bold text-white shadow-[0_9px_22px_rgba(76,61,219,0.24)] transition-all duration-200 hover:-translate-y-0.5 hover:shadow-[0_12px_28px_rgba(76,61,219,0.32)] active:translate-y-0 disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              <span className="tm-shine pointer-events-none absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-white/15 to-transparent" />
-
-              <span className="relative">
-                {loading
-                  ? "Updating password..."
-                  : success
-                    ? "Password updated"
-                    : "Update password"}
-              </span>
-
-              {!loading && !success && (
-                <svg
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  className="relative h-4 w-4 transition-transform duration-200 group-hover:translate-x-1"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  aria-hidden="true"
-                >
-                  <path
-                    d="M5 12h14m-6-6 6 6-6 6"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  />
-                </svg>
-              )}
-
-              {loading && (
-                <span className="relative h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
-              )}
-            </button>
-
-            <p className="text-center text-[11px] leading-5 text-[#9a9caf]">
-              Your new password is encrypted and securely managed.
-            </p>
-          </form>
-        )}
-
-        {/* Footer */}
-        <div className="mt-7 border-t border-[#edf0f6] pt-5">
-          <button
-            type="button"
-            onClick={() => router.push("/login")}
-            className="group flex w-full items-center justify-center gap-2 text-[12px] font-semibold text-[#6d68a1] transition hover:text-[#5946df]"
-          >
-            <span className="transition-transform duration-200 group-hover:-translate-x-1">
-              ←
-            </span>
-            Back to log in
-          </button>
-        </div>
-      </section>
-
+    <main className="reset-page">
       <style jsx>{`
-        .tm-card {
-          animation: tm-appear 0.55s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+        .reset-page {
+          min-height: 100vh;
+          min-height: 100dvh;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          padding: 32px 20px;
+          position: relative;
+          overflow: hidden;
+          background:
+            radial-gradient(
+              ellipse at 12% 15%,
+              rgba(167, 139, 250, 0.19),
+              transparent 36%
+            ),
+            radial-gradient(
+              ellipse at 88% 82%,
+              rgba(129, 140, 248, 0.18),
+              transparent 34%
+            ),
+            #f8f7ff;
+          color: #19172d;
+          font-family:
+            Inter, ui-sans-serif, system-ui, -apple-system,
+            BlinkMacSystemFont, "Segoe UI", sans-serif;
         }
 
-        .tm-glow {
-          animation: tm-glow 14s ease-in-out infinite alternate;
+        .orb {
+          position: absolute;
+          border-radius: 50%;
+          pointer-events: none;
+          filter: blur(1px);
         }
 
-        .tm-glow-delay {
-          animation-delay: -6s;
-          animation-duration: 18s;
+        .orb-one {
+          width: 240px;
+          height: 240px;
+          top: -100px;
+          right: -65px;
+          background: rgba(196, 181, 253, 0.2);
         }
 
-        .tm-submit:hover .tm-shine {
-          animation: tm-shine 0.8s ease forwards;
+        .orb-two {
+          width: 190px;
+          height: 190px;
+          bottom: -75px;
+          left: -55px;
+          background: rgba(165, 180, 252, 0.2);
         }
 
-        @keyframes tm-appear {
+        .layout {
+          width: 100%;
+          max-width: 460px;
+          position: relative;
+          z-index: 1;
+          animation: rise-in 0.65s ease both;
+        }
+
+        .brand {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 11px;
+          margin-bottom: 30px;
+          text-decoration: none;
+          color: inherit;
+        }
+
+        .brand-mark {
+          width: 42px;
+          height: 42px;
+          display: grid;
+          place-items: center;
+          border-radius: 14px;
+          color: white;
+          background: linear-gradient(145deg, #8b5cf6, #6d28d9);
+          box-shadow: 0 8px 20px rgba(109, 40, 217, 0.25);
+        }
+
+        .brand-name {
+          font-size: 25px;
+          font-weight: 800;
+          letter-spacing: -1.1px;
+        }
+
+        .brand-name span {
+          color: #7c3aed;
+        }
+
+        .card {
+          padding: 42px;
+          border: 1px solid rgba(255, 255, 255, 0.9);
+          border-radius: 28px;
+          background: rgba(255, 255, 255, 0.88);
+          box-shadow:
+            0 28px 80px rgba(53, 38, 99, 0.09),
+            0 5px 18px rgba(53, 38, 99, 0.04);
+          backdrop-filter: blur(18px);
+        }
+
+        .icon-wrap {
+          width: 62px;
+          height: 62px;
+          display: grid;
+          place-items: center;
+          margin-bottom: 25px;
+          border: 1px solid #e9ddff;
+          border-radius: 20px;
+          background: linear-gradient(145deg, #f5f0ff, #ede7ff);
+          color: #7c3aed;
+        }
+
+        .eyebrow {
+          margin: 0 0 9px;
+          color: #7c3aed;
+          font-size: 11px;
+          font-weight: 800;
+          letter-spacing: 2px;
+          text-transform: uppercase;
+        }
+
+        h1 {
+          margin: 0;
+          color: #201a38;
+          font-size: clamp(27px, 5vw, 34px);
+          font-weight: 800;
+          line-height: 1.2;
+          letter-spacing: -1.3px;
+        }
+
+        .description {
+          margin: 13px 0 30px;
+          color: #77738b;
+          font-size: 14px;
+          line-height: 1.8;
+        }
+
+        .field {
+          margin-bottom: 21px;
+        }
+
+        .label-row {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          margin-bottom: 9px;
+        }
+
+        label {
+          color: #37324d;
+          font-size: 12px;
+          font-weight: 750;
+        }
+
+        .input-wrap {
+          position: relative;
+        }
+
+        input {
+          width: 100%;
+          height: 51px;
+          padding: 0 49px 0 15px;
+          border: 1px solid #e7e4f0;
+          border-radius: 13px;
+          outline: none;
+          background: #fbfaff;
+          color: #252039;
+          font: inherit;
+          font-size: 13px;
+          transition:
+            border-color 0.2s,
+            box-shadow 0.2s,
+            background 0.2s;
+          box-sizing: border-box;
+        }
+
+        input::placeholder {
+          color: #aaa6bc;
+        }
+
+        input:focus {
+          border-color: #a78bfa;
+          background: #fff;
+          box-shadow: 0 0 0 4px rgba(139, 92, 246, 0.1);
+        }
+
+        .toggle {
+          position: absolute;
+          top: 50%;
+          right: 13px;
+          transform: translateY(-50%);
+          display: grid;
+          place-items: center;
+          padding: 5px;
+          border: 0;
+          background: transparent;
+          color: #88829e;
+          cursor: pointer;
+        }
+
+        .strength {
+          display: flex;
+          align-items: center;
+          gap: 5px;
+          margin-top: 10px;
+        }
+
+        .strength-bar {
+          height: 4px;
+          flex: 1;
+          border-radius: 99px;
+          background: #eeecf4;
+          transition: background 0.2s;
+        }
+
+        .strength-text {
+          margin-left: 5px;
+          color: #88829e;
+          font-size: 10px;
+          white-space: nowrap;
+        }
+
+        .primary {
+          width: 100%;
+          min-height: 52px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 9px;
+          margin-top: 8px;
+          border: 0;
+          border-radius: 14px;
+          background: linear-gradient(105deg, #8b5cf6, #6d28d9);
+          box-shadow: 0 10px 22px rgba(109, 40, 217, 0.2);
+          color: white;
+          font: inherit;
+          font-size: 13px;
+          font-weight: 750;
+          cursor: pointer;
+          transition:
+            transform 0.2s,
+            box-shadow 0.2s,
+            opacity 0.2s;
+        }
+
+        .primary:hover:not(:disabled) {
+          transform: translateY(-2px);
+          box-shadow: 0 14px 27px rgba(109, 40, 217, 0.27);
+        }
+
+        .primary:disabled {
+          cursor: not-allowed;
+          opacity: 0.65;
+        }
+
+        .message {
+          display: flex;
+          align-items: flex-start;
+          gap: 9px;
+          margin-top: 18px;
+          padding: 13px;
+          border: 1px solid;
+          border-radius: 12px;
+          font-size: 12px;
+          line-height: 1.65;
+          overflow-wrap: anywhere;
+        }
+
+        .message.error {
+          border-color: #fecaca;
+          background: #fff5f5;
+          color: #b42335;
+        }
+
+        .message.success {
+          border-color: #bbf7d0;
+          background: #f0fdf4;
+          color: #166534;
+        }
+
+        .footer {
+          margin: 25px 0 0;
+          text-align: center;
+          color: #88829e;
+          font-size: 12px;
+        }
+
+        .footer a {
+          color: #7c3aed;
+          font-weight: 750;
+          text-decoration: none;
+        }
+
+        .footer a:hover {
+          text-decoration: underline;
+        }
+
+        .security-note {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 7px;
+          margin-top: 23px;
+          color: #918ca5;
+          font-size: 11px;
+        }
+
+        .invalid-actions {
+          display: flex;
+          flex-direction: column;
+          gap: 12px;
+        }
+
+        .secondary {
+          display: block;
+          padding: 15px;
+          border: 1px solid #e6defa;
+          border-radius: 13px;
+          color: #7137ce;
+          font-size: 13px;
+          font-weight: 750;
+          text-align: center;
+          text-decoration: none;
+          transition: background 0.2s;
+        }
+
+        .secondary:hover {
+          background: #f7f3ff;
+        }
+
+        .spinner {
+          width: 17px;
+          height: 17px;
+          border: 2px solid rgba(255, 255, 255, 0.4);
+          border-top-color: white;
+          border-radius: 50%;
+          animation: spin 0.7s linear infinite;
+        }
+
+        @keyframes rise-in {
           from {
             opacity: 0;
-            transform: translateY(12px) scale(0.99);
+            transform: translateY(15px);
           }
           to {
             opacity: 1;
-            transform: translateY(0) scale(1);
+            transform: translateY(0);
           }
         }
 
-        @keyframes tm-glow {
-          from {
-            transform: translate3d(0, 0, 0);
-          }
+        @keyframes spin {
           to {
-            transform: translate3d(22px, -16px, 0);
+            transform: rotate(360deg);
           }
         }
 
-        @keyframes tm-shine {
-          from {
-            transform: translateX(-100%);
+        @media (max-width: 520px) {
+          .reset-page {
+            padding: 24px 15px;
           }
-          to {
-            transform: translateX(100%);
+
+          .brand {
+            margin-bottom: 22px;
+          }
+
+          .card {
+            padding: 28px 22px;
+            border-radius: 23px;
+          }
+
+          .icon-wrap {
+            width: 54px;
+            height: 54px;
+            margin-bottom: 20px;
           }
         }
 
         @media (prefers-reduced-motion: reduce) {
-          .tm-card,
-          .tm-glow {
-            animation: none !important;
+          .layout {
+            animation: none;
           }
 
-          .tm-submit,
-          .tm-shine {
-            transition: none !important;
-            animation: none !important;
+          *,
+          *::before,
+          *::after {
+            transition-duration: 0.01ms !important;
           }
         }
       `}</style>
+
+      <div className="orb orb-one" />
+      <div className="orb orb-two" />
+
+      <div className="layout">
+       <Link href="/" className="brand" aria-label="TraceMind home">
+  <span className="brand-mark">
+    <span
+      style={{
+        fontSize: "25px",
+        fontWeight: 800,
+        lineHeight: 1,
+        color: "#ffffff",
+      }}
+    >
+      T
+    </span>
+  </span>
+
+  <span className="brand-name">
+    Trace<span>Mind</span>
+  </span>
+</Link>
+
+        <section className="card">
+          <div className="icon-wrap">
+            <svg
+              width="29"
+              height="29"
+              viewBox="0 0 24 24"
+              fill="none"
+              aria-hidden="true"
+            >
+              <rect
+                x="5"
+                y="10"
+                width="14"
+                height="11"
+                rx="3"
+                stroke="currentColor"
+                strokeWidth="1.7"
+              />
+              <path
+                d="M8 10V7a4 4 0 0 1 8 0v3"
+                stroke="currentColor"
+                strokeWidth="1.7"
+                strokeLinecap="round"
+              />
+              <path
+                d="M12 14V17"
+                stroke="currentColor"
+                strokeWidth="1.7"
+                strokeLinecap="round"
+              />
+            </svg>
+          </div>
+
+          <p className="eyebrow">Account security</p>
+
+          <h1>Create a new password</h1>
+
+          <p className="description">
+            Almost there! Choose a strong password to secure your TraceMind
+            account and get back to everything you have saved.
+          </p>
+
+          {checkingSession ? (
+            <div
+              style={{
+                padding: "25px 0",
+                textAlign: "center",
+                color: "#77738b",
+                fontSize: 13,
+              }}
+            >
+              Checking your secure reset link...
+            </div>
+          ) : !sessionReady ? (
+            <>
+              {message && (
+                <div className="message error" role="alert">
+                  <span aria-hidden="true">!</span>
+                  <span>{message}</span>
+                </div>
+              )}
+
+              <div
+                className="invalid-actions"
+                style={{ marginTop: 22 }}
+              >
+                <Link href="/forgot-password" className="primary">
+                  Request a new reset link
+                </Link>
+
+                <Link href="/login" className="secondary">
+                  Back to login
+                </Link>
+              </div>
+            </>
+          ) : (
+            <form onSubmit={handleResetPassword}>
+              <div className="field">
+                <div className="label-row">
+                  <label htmlFor="new-password">New password</label>
+                </div>
+
+                <div className="input-wrap">
+                  <input
+                    id="new-password"
+                    type={showPassword ? "text" : "password"}
+                    placeholder="Enter your new password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    autoComplete="new-password"
+                    minLength={8}
+                    required
+                    disabled={loading}
+                  />
+
+                  <button
+                    className="toggle"
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    aria-label={
+                      showPassword ? "Hide password" : "Show password"
+                    }
+                  >
+                    {showPassword ? (
+                      <svg
+                        width="19"
+                        height="19"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                      >
+                        <path
+                          d="M3 3L21 21M10.6 10.6A2 2 0 0 0 13.4 13.4M9.9 5.2A10.8 10.8 0 0 1 12 5c5.5 0 9 7 9 7a15 15 0 0 1-3 3.8M6.2 6.2C4.1 7.6 3 10 3 12c0 0 3.5 7 9 7 1.1 0 2.2-.3 3.1-.7"
+                          stroke="currentColor"
+                          strokeWidth="1.6"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        />
+                      </svg>
+                    ) : (
+                      <svg
+                        width="19"
+                        height="19"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                      >
+                        <path
+                          d="M3 12S6.5 5 12 5s9 7 9 7-3.5 7-9 7-9-7-9-7Z"
+                          stroke="currentColor"
+                          strokeWidth="1.6"
+                          strokeLinejoin="round"
+                        />
+                        <circle
+                          cx="12"
+                          cy="12"
+                          r="3"
+                          stroke="currentColor"
+                          strokeWidth="1.6"
+                        />
+                      </svg>
+                    )}
+                  </button>
+                </div>
+
+                <div
+                  className="strength"
+                  aria-label={`Password strength: ${strengthLabel}`}
+                >
+                  {[1, 2, 3, 4, 5].map((level) => (
+                    <span
+                      key={level}
+                      className="strength-bar"
+                      style={{
+                        background:
+                          password.length > 0 && level <= passwordStrength
+                            ? passwordStrength <= 2
+                              ? "#ef4444"
+                              : passwordStrength <= 4
+                                ? "#f59e0b"
+                                : "#22c55e"
+                            : undefined,
+                      }}
+                    />
+                  ))}
+
+                  <span className="strength-text">
+                    {strengthLabel}
+                  </span>
+                </div>
+              </div>
+
+              <div className="field">
+                <div className="label-row">
+                  <label htmlFor="confirm-password">
+                    Confirm new password
+                  </label>
+                </div>
+
+                <div className="input-wrap">
+                  <input
+                    id="confirm-password"
+                    type={showConfirmPassword ? "text" : "password"}
+                    placeholder="Enter your password again"
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    autoComplete="new-password"
+                    required
+                    disabled={loading}
+                  />
+
+                  <button
+                    className="toggle"
+                    type="button"
+                    onClick={() =>
+                      setShowConfirmPassword(!showConfirmPassword)
+                    }
+                    aria-label={
+                      showConfirmPassword
+                        ? "Hide confirmation password"
+                        : "Show confirmation password"
+                    }
+                  >
+                    {showConfirmPassword ? "Hide" : "Show"}
+                  </button>
+                </div>
+              </div>
+
+              <button
+                type="submit"
+                className="primary"
+                disabled={loading}
+              >
+                {loading ? (
+                  <>
+                    <span className="spinner" />
+                    Updating password...
+                  </>
+                ) : (
+                  <>
+                    Update password
+                    <svg
+                      width="17"
+                      height="17"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      aria-hidden="true"
+                    >
+                      <path
+                        d="M5 12H19M12 5L19 12L12 19"
+                        stroke="currentColor"
+                        strokeWidth="1.8"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                    </svg>
+                  </>
+                )}
+              </button>
+
+              {message && (
+                <div
+                  className={`message ${messageType}`}
+                  role={messageType === "error" ? "alert" : "status"}
+                >
+                  <span aria-hidden="true">
+                    {messageType === "success" ? "✓" : "!"}
+                  </span>
+                  <span>{message}</span>
+                </div>
+              )}
+            </form>
+          )}
+        </section>
+
+        <p className="footer">
+          Remembered your password?{" "}
+          <Link href="/login">Back to login</Link>
+        </p>
+
+        <div className="security-note">
+          <svg
+            width="14"
+            height="14"
+            viewBox="0 0 24 24"
+            fill="none"
+            aria-hidden="true"
+          >
+            <path
+              d="M12 3L19 6V11.5C19 16 16 19.5 12 21C8 19.5 5 16 5 11.5V6L12 3Z"
+              stroke="currentColor"
+              strokeWidth="1.6"
+              strokeLinejoin="round"
+            />
+            <path
+              d="M9 12L11 14L15 10"
+              stroke="currentColor"
+              strokeWidth="1.6"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+          Secure password recovery · TraceMind
+        </div>
+      </div>
     </main>
   );
 }

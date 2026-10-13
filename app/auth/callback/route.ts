@@ -5,6 +5,17 @@ import { cookies } from "next/headers";
 export async function GET(request: Request) {
   const requestUrl = new URL(request.url);
   const code = requestUrl.searchParams.get("code");
+  console.log(
+  "[AUTH CALLBACK]",
+  JSON.stringify({
+    pathname: requestUrl.pathname,
+    hasCode: Boolean(requestUrl.searchParams.get("code")),
+    hasTokenHash: Boolean(requestUrl.searchParams.get("token_hash")),
+    type: requestUrl.searchParams.get("type"),
+    next: requestUrl.searchParams.get("next"),
+    error: requestUrl.searchParams.get("error"),
+  })
+);
   const tokenHash = requestUrl.searchParams.get("token_hash");
   const type = requestUrl.searchParams.get("type");
   const next = requestUrl.searchParams.get("next");
@@ -80,17 +91,29 @@ export async function GET(request: Request) {
 
     authError = error;
     userExists = Boolean(data.user);
-  } else {
-    return NextResponse.redirect(
-      new URL(
-        isRecovery
-          ? "/forgot-password?error=missing_code"
-          : "/verify-email?error=missing_code",
-        requestUrl.origin
-      )
-    );
-  }
+} else {
+  const diagnosticUrl = new URL(
+    "/forgot-password?error=missing_code",
+    requestUrl.origin
+  );
 
+  diagnosticUrl.searchParams.set(
+    "debug_type",
+    type || "none"
+  );
+
+  diagnosticUrl.searchParams.set(
+    "debug_has_token_hash",
+    String(Boolean(tokenHash))
+  );
+
+  diagnosticUrl.searchParams.set(
+    "debug_has_code",
+    String(Boolean(code))
+  );
+
+  return NextResponse.redirect(diagnosticUrl);
+}
   if (authError || !userExists) {
     return NextResponse.redirect(
       new URL(errorPath, requestUrl.origin)

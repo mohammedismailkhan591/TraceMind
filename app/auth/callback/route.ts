@@ -5,41 +5,74 @@ import { cookies } from "next/headers";
 export async function GET(request: Request) {
   const requestUrl = new URL(request.url);
   const code = requestUrl.searchParams.get("code");
+  const next = requestUrl.searchParams.get("next");
 
-  if (code) {
-    const cookieStore = await cookies();
+  const cookieStore = await cookies();
 
-    const supabase = createServerClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-      {
-        cookies: {
-          getAll() {
-            return cookieStore.getAll();
-          },
-          setAll(cookiesToSet) {
-            try {
-              cookiesToSet.forEach(({ name, value, options }) => {
-                cookieStore.set(name, value, options);
-              });
-            } catch {
-              // Ignore cookie errors when called from a Server Component.
-            }
-          },
-        },
-      }
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+  if (!supabaseUrl || !supabaseKey) {
+    return NextResponse.redirect(
+      new URL("/login?error=supabase_not_configured", requestUrl.origin)
     );
-
-    const { error } = await supabase.auth.exchangeCodeForSession(code);
-
-    if (!error) {
-      return NextResponse.redirect(
-        new URL("/dashboard", requestUrl.origin)
-      );
-    }
   }
 
-  return NextResponse.redirect(
-    new URL("/login?error=auth_callback_failed", requestUrl.origin)
+  const response = NextResponse.redirect(
+    new URL("/login", requestUrl.origin)
   );
+
+  const supabase = createServerClient(
+    supabaseUrl,
+    supabaseKey,
+    {
+      cookies: {
+        getAll() {
+          return cookieStore.getAll();
+        },
+        setAll(cookiesToSet) {
+          cookiesToSet.forEach(({ name, value, options }) => {
+            response.cookies.set(name, value, options);
+          });
+        },
+      },
+    }
+  );
+
+  if (!code) {
+    return NextResponse.redirect(
+      new URL("/verify-email?error=missing_code", requestUrl.origin)
+    );
+  }
+
+  const { data, error } =
+    await supabase.auth.exchangeCodeForSession(code);
+
+  if (error || !data.user) {
+    return NextResponse.redirect(
+      new URL("/verify-email?error=verification_failed", requestUrl.origin)
+    );
+  }
+
+  // Password recovery must return to the password-reset page.
+  if (next === "/reset-password") {
+    response.headers.set(
+      "Location",
+      new URL("/reset-password", requestUrl.origin).toString()
+    );
+
+    return response;
+  }
+
+  // A successfully verified email gets its own confirmation page.
+  const verifiedResponse = NextResponse.redirect(
+    new URL("/verify-email?verified=1", requestUrl.origin)
+  );
+
+  // Preserve the authentication cookies created during code exchange.
+  response.cookies.getAll().forEach((cookie) => {
+    verifiedResponse.cookies.set(cookie);
+  });
+
+  return verifiedResponse;
 }

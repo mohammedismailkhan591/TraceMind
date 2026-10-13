@@ -3,7 +3,11 @@
 import Link from "next/link";
 import { useState } from "react";
 import Logo from "../../components/Logo";
-import { createClient, isSupabaseConfigured, SUPABASE_SETUP_MESSAGE } from "../../lib/supabase";
+import {
+  createClient,
+  isSupabaseConfigured,
+  SUPABASE_SETUP_MESSAGE,
+} from "../../lib/supabase";
 
 export default function Signup() {
   const [name, setName] = useState("");
@@ -19,7 +23,7 @@ export default function Signup() {
     e.preventDefault();
     setMessage("");
 
-    if (!name || !email || !password) {
+    if (!name.trim() || !email.trim() || !password) {
       setMessage("Please fill in all fields.");
       return;
     }
@@ -29,60 +33,89 @@ export default function Signup() {
       return;
     }
 
-    setLoading(true);
-
-    const supabase = createClient();
-    const { error } = await supabase.auth.signUp({
-      email,
-      password,
-      options: {
-        data: {
-          name: name,
-        },
-      },
-    });
-
-    setLoading(false);
-
-    if (error) {
-      setMessage(error.message);
-      return;
-    }
-
-    setMessage(
-      "Account created! Please check your email to verify your account."
-    );
-
-    setName("");
-    setEmail("");
-    setPassword("");
-  };
-
-  const handleGoogleSignup = async () => {
-    setMessage("");
     if (!isSupabaseConfigured()) {
       setMessage(SUPABASE_SETUP_MESSAGE);
       return;
     }
+
     setLoading(true);
 
-    const supabase = createClient();
-    const { error } = await supabase.auth.signInWithOAuth({
-      provider: "google",
-      options: {
-        redirectTo: `${window.location.origin}/auth/callback`,
-      },
-    });
+    try {
+      const supabase = createClient();
 
-    if (error) {
+      const { data, error } = await supabase.auth.signUp({
+        email: email.trim(),
+        password,
+        options: {
+          // Store the user's name as metadata.
+          data: {
+            name: name.trim(),
+          },
+
+          // IMPORTANT: This must be outside data.
+          emailRedirectTo: `${window.location.origin}/auth/callback?next=/verify-email`,
+        },
+      });
+
+      if (error) {
+        setMessage(error.message);
+        return;
+      }
+
+      if (data.session) {
+        setMessage(
+          "Your account has been created. You can now continue to TraceMind."
+        );
+      } else {
+        setMessage(
+          "Account created! Please check your inbox or spam folder and click the verification link to activate your account."
+        );
+      }
+
+      setName("");
+      setEmail("");
+      setPassword("");
+    } catch {
+      setMessage(
+        "Something went wrong while creating your account. Please try again."
+      );
+    } finally {
       setLoading(false);
-      setMessage(error.message);
+    }
+  };
+
+  const handleGoogleSignup = async () => {
+    setMessage("");
+
+    if (!isSupabaseConfigured()) {
+      setMessage(SUPABASE_SETUP_MESSAGE);
+      return;
+    }
+
+    setLoading(true);
+
+    try {
+      const supabase = createClient();
+
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: "google",
+        options: {
+          redirectTo: `${window.location.origin}/auth/callback`,
+        },
+      });
+
+      if (error) {
+        setMessage(error.message);
+        setLoading(false);
+      }
+    } catch {
+      setMessage("Unable to continue with Google. Please try again.");
+      setLoading(false);
     }
   };
 
   return (
     <main className="auth-page">
-
       {/* LEFT SIDE */}
       <section className="auth-visual">
         <Logo />
@@ -100,8 +133,8 @@ export default function Signup() {
           </p>
 
           <div className="auth-points">
-            <div>📸 Screenshots & PDFs</div>
-            <div>🔗 Links & text</div>
+            <div>📸 Screenshots &amp; PDFs</div>
+            <div>🔗 Links &amp; text</div>
             <div>🎙 Voice notes</div>
           </div>
         </div>
@@ -110,7 +143,6 @@ export default function Signup() {
       {/* RIGHT SIDE */}
       <section className="auth-card">
         <div className="auth-form">
-
           <Logo />
 
           <h1>Create your account</h1>
@@ -119,7 +151,7 @@ export default function Signup() {
             Start organizing the information you don't want to lose.
           </p>
 
-          {/* GOOGLE */}
+          {/* GOOGLE SIGNUP */}
           <button
             type="button"
             className="google-btn"
@@ -153,7 +185,9 @@ export default function Signup() {
               />
             </svg>
 
-            <span>Continue with Google</span>
+            <span>
+              {loading ? "Please wait..." : "Continue with Google"}
+            </span>
           </button>
 
           <div className="divider">
@@ -162,44 +196,53 @@ export default function Signup() {
 
           {/* EMAIL SIGNUP */}
           <form onSubmit={handleSignup}>
-
-            <label className="label">
+            <label className="label" htmlFor="signup-name">
               Name
             </label>
 
             <input
+              id="signup-name"
               className="input"
               type="text"
               placeholder="Your name"
               value={name}
               onChange={(e) => setName(e.target.value)}
               autoComplete="name"
+              required
+              disabled={loading}
             />
 
-            <label className="label">
+            <label className="label" htmlFor="signup-email">
               Email
             </label>
 
             <input
+              id="signup-email"
               className="input"
               type="email"
               placeholder="you@example.com"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               autoComplete="email"
+              required
+              disabled={loading}
             />
 
-            <label className="label">
+            <label className="label" htmlFor="signup-password">
               Password
             </label>
 
             <input
+              id="signup-password"
               className="input"
               type="password"
               placeholder="At least 8 characters"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               autoComplete="new-password"
+              minLength={8}
+              required
+              disabled={loading}
             />
 
             <button
@@ -209,25 +252,20 @@ export default function Signup() {
             >
               {loading ? "Creating account..." : "Create account"}
             </button>
-
           </form>
 
           {message && (
-            <p className="auth-message">
+            <p className="auth-message" role="status" aria-live="polite">
               {message}
             </p>
           )}
 
           <p className="muted">
             Already have an account?{" "}
-            <Link
-              className="auth-link"
-              href="/login"
-            >
+            <Link className="auth-link" href="/login">
               Log in
             </Link>
           </p>
-
         </div>
       </section>
     </main>

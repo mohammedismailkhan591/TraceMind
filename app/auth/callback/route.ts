@@ -7,6 +7,9 @@ export async function GET(request: Request) {
   const code = requestUrl.searchParams.get("code");
   const next = requestUrl.searchParams.get("next");
 
+  const safeNext =
+    next === "/reset-password" ? "/reset-password" : "/verify-email?verified=1";
+
   const cookieStore = await cookies();
 
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -18,8 +21,19 @@ export async function GET(request: Request) {
     );
   }
 
+  if (!code) {
+    const destination =
+      next === "/reset-password"
+        ? "/forgot-password?error=missing_code"
+        : "/verify-email?error=missing_code";
+
+    return NextResponse.redirect(
+      new URL(destination, requestUrl.origin)
+    );
+  }
+
   const response = NextResponse.redirect(
-    new URL("/login", requestUrl.origin)
+    new URL(safeNext, requestUrl.origin)
   );
 
   const supabase = createServerClient(
@@ -39,40 +53,25 @@ export async function GET(request: Request) {
     }
   );
 
-  if (!code) {
-    return NextResponse.redirect(
-      new URL("/verify-email?error=missing_code", requestUrl.origin)
-    );
-  }
-
   const { data, error } =
     await supabase.auth.exchangeCodeForSession(code);
 
   if (error || !data.user) {
-    return NextResponse.redirect(
-      new URL("/verify-email?error=verification_failed", requestUrl.origin)
-    );
-  }
+    const destination =
+      next === "/reset-password"
+        ? "/forgot-password?error=reset_link_invalid"
+        : "/verify-email?error=verification_failed";
 
-  // Password recovery must return to the password-reset page.
-  if (next === "/reset-password") {
-    response.headers.set(
-      "Location",
-      new URL("/reset-password", requestUrl.origin).toString()
+    const errorResponse = NextResponse.redirect(
+      new URL(destination, requestUrl.origin)
     );
 
-    return response;
+    response.cookies.getAll().forEach((cookie) => {
+      errorResponse.cookies.set(cookie);
+    });
+
+    return errorResponse;
   }
 
-  // A successfully verified email gets its own confirmation page.
-  const verifiedResponse = NextResponse.redirect(
-    new URL("/verify-email?verified=1", requestUrl.origin)
-  );
-
-  // Preserve the authentication cookies created during code exchange.
-  response.cookies.getAll().forEach((cookie) => {
-    verifiedResponse.cookies.set(cookie);
-  });
-
-  return verifiedResponse;
+  return response;
 }

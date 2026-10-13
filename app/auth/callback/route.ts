@@ -5,10 +5,21 @@ import { cookies } from "next/headers";
 export async function GET(request: Request) {
   const requestUrl = new URL(request.url);
   const code = requestUrl.searchParams.get("code");
+  const tokenHash = requestUrl.searchParams.get("token_hash");
+  const type = requestUrl.searchParams.get("type");
   const next = requestUrl.searchParams.get("next");
 
-  const safeNext =
-    next === "/reset-password" ? "/reset-password" : "/verify-email?verified=1";
+  const isRecovery =
+    next === "/reset-password" ||
+    type === "recovery";
+
+  const successPath = isRecovery
+    ? "/reset-password"
+    : "/verify-email?verified=1";
+
+  const errorPath = isRecovery
+    ? "/forgot-password?error=reset_link_invalid"
+    : "/verify-email?error=verification_failed";
 
   const cookieStore = await cookies();
 
@@ -17,23 +28,15 @@ export async function GET(request: Request) {
 
   if (!supabaseUrl || !supabaseKey) {
     return NextResponse.redirect(
-      new URL("/login?error=supabase_not_configured", requestUrl.origin)
-    );
-  }
-
-  if (!code) {
-    const destination =
-      next === "/reset-password"
-        ? "/forgot-password?error=missing_code"
-        : "/verify-email?error=missing_code";
-
-    return NextResponse.redirect(
-      new URL(destination, requestUrl.origin)
+      new URL(
+        "/login?error=supabase_not_configured",
+        requestUrl.origin
+      )
     );
   }
 
   const response = NextResponse.redirect(
-    new URL(safeNext, requestUrl.origin)
+    new URL(successPath, requestUrl.origin)
   );
 
   const supabase = createServerClient(
@@ -53,24 +56,45 @@ export async function GET(request: Request) {
     }
   );
 
-  const { data, error } =
-    await supabase.auth.exchangeCodeForSession(code);
+  let authError: { message: string } | null = null;
+  let userExists = false;
 
-  if (error || !data.user) {
-    const destination =
-      next === "/reset-password"
-        ? "/forgot-password?error=reset_link_invalid"
-        : "/verify-email?error=verification_failed";
+  if (code) {
+    const { data, error } =
+      await supabase.auth.exchangeCodeForSession(code);
 
-    const errorResponse = NextResponse.redirect(
-      new URL(destination, requestUrl.origin)
+    authError = error;
+    userExists = Boolean(data.user);
+  } else if (tokenHash && type) {
+    const { data, error } =
+      await supabase.auth.verifyOtp({
+        token_hash: tokenHash,
+        type: type as
+          | "recovery"
+          | "signup"
+          | "invite"
+          | "magiclink"
+          | "email"
+          | "email_change",
+      });
+
+    authError = error;
+    userExists = Boolean(data.user);
+  } else {
+    return NextResponse.redirect(
+      new URL(
+        isRecovery
+          ? "/forgot-password?error=missing_code"
+          : "/verify-email?error=missing_code",
+        requestUrl.origin
+      )
     );
+  }
 
-    response.cookies.getAll().forEach((cookie) => {
-      errorResponse.cookies.set(cookie);
-    });
-
-    return errorResponse;
+  if (authError || !userExists) {
+    return NextResponse.redirect(
+      new URL(errorPath, requestUrl.origin)
+    );
   }
 
   return response;

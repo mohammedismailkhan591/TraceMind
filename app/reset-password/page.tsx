@@ -64,32 +64,39 @@ export default function ResetPasswordPage() {
       }
 
       // Handle a PKCE authorization code.
-      const code = params.get("code");
+     const code = params.get("code");
 
-      if (code) {
-        const { error } =
-          await supabase.auth.exchangeCodeForSession(code);
+if (code) {
+  const { data, error } =
+    await supabase.auth.exchangeCodeForSession(code);
 
-        if (error) {
-          console.error("[RESET] Code exchange failed:", error.message);
+  if (error || !data.session) {
+    console.error("[RESET] Browser code exchange failed:", {
+      message: error?.message ?? "No session returned",
+      code: error?.code ?? null,
+      status: error?.status ?? null,
+    });
 
-          if (active) {
-            setMessage(
-              "This reset link could not be verified. Please request a new one."
-            );
-            setMessageType("error");
-            setSessionReady(false);
-            setCheckingSession(false);
-          }
-          return;
-        }
+    if (active) {
+      setMessage(
+        error?.message ??
+          "The reset session could not be established. Please request a new link."
+      );
+      setMessageType("error");
+      setSessionReady(false);
+      setCheckingSession(false);
+    }
 
-        window.history.replaceState(
-          {},
-          document.title,
-          window.location.pathname
-        );
-      } else {
+    return;
+  }
+
+  window.history.replaceState(
+    {},
+    document.title,
+    window.location.pathname
+  );
+}
+       else {
         // Handle tokens returned in the URL fragment.
         const accessToken = hashParams.get("access_token");
         const refreshToken = hashParams.get("refresh_token");

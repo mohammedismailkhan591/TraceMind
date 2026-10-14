@@ -43,20 +43,13 @@ export default function Signup() {
     try {
       const supabase = createClient();
 
-      const { data, error } = await supabase.auth.signUp({
-        email: email.trim(),
-        password,
-        options: {
-          // Store the user's name as metadata.
-          data: {
-            name: name.trim(),
-          },
-
-          // IMPORTANT: This must be outside data.
-          emailRedirectTo: `${window.location.origin}/auth/callback?next=/verify-email`,
-        },
-      });
-
+    const { data, error } = await supabase.auth.signUp({
+  email,
+  password,
+  options: {
+    emailRedirectTo: `${window.location.origin}/auth/confirm`,
+  },
+});
       if (error) {
         setMessage(error.message);
         return;

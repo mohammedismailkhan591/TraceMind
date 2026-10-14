@@ -154,7 +154,7 @@ console.log("[RESET DEBUG] Session check finished", {
     }
   }
 }
-  }, [supabase]);
+  }, []);
 
   const passwordStrength = (() => {
     let score = 0;

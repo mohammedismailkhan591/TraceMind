@@ -8,18 +8,17 @@ export async function GET(request: Request) {
   const tokenHash = url.searchParams.get("token_hash");
   const type = url.searchParams.get("type");
 
-  // Always redirect to the TraceMind verification page.
   const successUrl = new URL("/verify-email?verified=true", url.origin);
-  const errorUrl = new URL(
-    "/verify-email?error=verification_failed",
-    url.origin
-  );
   const invalidUrl = new URL(
     "/verify-email?error=invalid_link",
     url.origin
   );
+  const errorUrl = new URL(
+    "/verify-email?error=verification_failed",
+    url.origin
+  );
 
-  // This callback expects a signup token hash.
+  // The callback must receive the token hash from the email link.
   if (!tokenHash || type !== "signup") {
     return NextResponse.redirect(invalidUrl);
   }
@@ -42,7 +41,6 @@ export async function GET(request: Request) {
         getAll() {
           return cookieStore.getAll();
         },
-
         setAll(cookiesToSet) {
           cookiesToSet.forEach(({ name, value, options }) => {
             cookieStore.set(name, value, options);
@@ -59,17 +57,13 @@ export async function GET(request: Request) {
     });
 
     if (error) {
-      console.error("Signup email verification failed:", error.message);
-
-      // A previously confirmed account may have an already-used link.
-      // Do not claim verification succeeded unless Supabase confirms it.
+      console.error("Signup verification failed:", error.message);
       return NextResponse.redirect(errorUrl);
     }
 
     return NextResponse.redirect(successUrl);
   } catch (error) {
-    console.error("Unexpected email verification error:", error);
-
+    console.error("Unexpected verification error:", error);
     return NextResponse.redirect(errorUrl);
   }
 }

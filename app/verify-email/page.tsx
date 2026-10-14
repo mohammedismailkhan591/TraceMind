@@ -7,22 +7,23 @@ import Logo from "../../components/Logo";
 
 function VerifyEmailContent() {
   const searchParams = useSearchParams();
+
   const error = searchParams.get("error");
   const verified = searchParams.get("verified");
 
   const errorMessages: Record<string, string> = {
     invalid_link:
-      "This verification link is invalid or incomplete. Please use the verification link from your latest email.",
+      "This verification link is incomplete or invalid. Please open the latest verification email you received.",
     verification_failed:
-      "This link may have expired or already been used. Please sign up again or request a fresh verification email.",
+      "We couldn't complete verification using this link. It may have expired or already been used. If your email is already confirmed, try signing in.",
   };
 
   const errorMessage = error ? errorMessages[error] : null;
   const hasError = Boolean(errorMessage);
+  const isVerified = verified === "true" && !hasError;
 
   return (
     <main className="auth-page verify-auth-page">
-      {/* LEFT SIDE — MATCHES LOGIN */}
       <section className="auth-visual verify-visual">
         <Logo />
 
@@ -55,7 +56,11 @@ function VerifyEmailContent() {
           </div>
 
           <span className="verify-eyebrow">
-            {hasError ? "LET'S FIX THIS" : "ONE LAST STEP"}
+            {hasError
+              ? "LET'S FIX THIS"
+              : isVerified
+                ? "YOU'RE ALL SET"
+                : "ONE LAST STEP"}
           </span>
 
           <h1>
@@ -76,8 +81,8 @@ function VerifyEmailContent() {
 
           <p>
             {hasError
-              ? "No worries. Let's get your account verification sorted out so you can continue your TraceMind journey."
-              : "Your ideas, discoveries, and important moments deserve a safe place. One quick step and you're ready to go."}
+              ? "Let's get your account verification sorted out so you can continue your TraceMind journey."
+              : "Your ideas, discoveries, and important moments deserve a safe place."}
           </p>
 
           <div className="auth-points verify-points">
@@ -101,7 +106,6 @@ function VerifyEmailContent() {
         </div>
       </section>
 
-      {/* RIGHT SIDE — MATCHES LOGIN CARD */}
       <section className="auth-card verify-card-section">
         <div className="auth-form verify-form">
           <div className="verify-mobile-logo">
@@ -110,7 +114,9 @@ function VerifyEmailContent() {
 
           <div
             className={`verify-status-icon ${
-              hasError ? "verify-status-error" : "verify-status-success"
+              hasError
+                ? "verify-status-error"
+                : "verify-status-success"
             }`}
             aria-hidden="true"
           >
@@ -128,6 +134,16 @@ function VerifyEmailContent() {
                   stroke="currentColor"
                   strokeWidth="1.7"
                   strokeLinecap="round"
+                />
+              </svg>
+            ) : isVerified ? (
+              <svg viewBox="0 0 24 24" fill="none">
+                <path
+                  d="m5 12 4 4L19 6"
+                  stroke="currentColor"
+                  strokeWidth="1.8"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
                 />
               </svg>
             ) : (
@@ -159,7 +175,7 @@ function VerifyEmailContent() {
             <span className="verify-status-dot" />
             {hasError
               ? "Verification issue"
-              : verified === "true"
+              : isVerified
                 ? "Email verified"
                 : "Email verification"}
           </span>
@@ -171,7 +187,7 @@ function VerifyEmailContent() {
                 <br />
                 <span>sorted out.</span>
               </>
-            ) : verified === "true" ? (
+            ) : isVerified ? (
               <>
                 You're all
                 <br />
@@ -189,14 +205,57 @@ function VerifyEmailContent() {
           <p className="muted verify-description">
             {hasError
               ? errorMessage
-              : verified === "true"
-                ? "Your email has been verified successfully. You can now sign in to your TraceMind account."
-                : "You're almost ready to experience a smarter way to remember. Verify your email address to finish setting up your TraceMind account."}
+              : isVerified
+                ? "Your email verification was successful. You can now sign in to your TraceMind account."
+                : "You're almost ready! Open the email from TraceMind and click the verification button to finish setting up your account."}
           </p>
 
-          {!hasError && verified !== "true" && (
+          {!hasError && !isVerified && (
+            <>
+              <div className="verify-instructions">
+                <div
+                  className="verify-instructions-icon"
+                  aria-hidden="true"
+                >
+                  <svg viewBox="0 0 24 24" fill="none">
+                    <circle
+                      cx="12"
+                      cy="12"
+                      r="9"
+                      stroke="currentColor"
+                      strokeWidth="1.6"
+                    />
+                    <path
+                      d="M12 11v5m0-8h.01"
+                      stroke="currentColor"
+                      strokeWidth="1.8"
+                      strokeLinecap="round"
+                    />
+                  </svg>
+                </div>
+
+                <div>
+                  <h2>What happens next?</h2>
+                  <p>
+                    Click the verification link in your latest email.
+                    Then return here to sign in.
+                  </p>
+                </div>
+              </div>
+
+              <div className="verify-spam-note">
+                <span aria-hidden="true">✓</span>
+                Remember to check your spam or junk folder.
+              </div>
+            </>
+          )}
+
+          {hasError && (
             <div className="verify-instructions">
-              <div className="verify-instructions-icon" aria-hidden="true">
+              <div
+                className="verify-instructions-icon"
+                aria-hidden="true"
+              >
                 <svg viewBox="0 0 24 24" fill="none">
                   <circle
                     cx="12"
@@ -215,40 +274,26 @@ function VerifyEmailContent() {
               </div>
 
               <div>
-                <h2>What happens next?</h2>
+                <h2>Already confirmed your email?</h2>
                 <p>
-                  Open the email from TraceMind and click the verification
-                  button. Once verified, return here to sign in securely.
+                  Try signing in first. If you still cannot access
+                  your account, check its confirmation status in
+                  Supabase.
                 </p>
               </div>
             </div>
           )}
 
-          {!hasError && verified !== "true" && (
-            <div className="verify-spam-note">
-              <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                <path
-                  d="m5 12 4 4L19 6"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-              </svg>
-              Remember to check your spam or junk folder.
-            </div>
-          )}
-
           <Link
-            href={hasError ? "/signup" : "/login"}
+            href={hasError ? "/login" : "/login"}
             className="primary-btn verify-primary-btn"
           >
             <span>
-              {hasError
-                ? "Back to sign up"
-                : verified === "true"
-                  ? "Continue to login"
-                  : "Continue to login"}
+              {isVerified
+                ? "Continue to login"
+                : hasError
+                  ? "Try logging in"
+                  : "Go to login"}
             </span>
 
             <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -261,6 +306,12 @@ function VerifyEmailContent() {
               />
             </svg>
           </Link>
+
+          {hasError && (
+            <p className="verify-signup-link">
+              Need a new account? <Link href="/signup">Sign up</Link>
+            </p>
+          )}
 
           <div className="verify-security">
             <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -334,7 +385,6 @@ function VerifyEmailContent() {
         .verify-visual-icon svg {
           width: 38px;
           height: 38px;
-          flex-shrink: 0;
         }
 
         .verify-eyebrow {
@@ -414,7 +464,6 @@ function VerifyEmailContent() {
         .verify-status-icon svg {
           width: 31px;
           height: 31px;
-          flex-shrink: 0;
         }
 
         .verify-status-success {
@@ -461,7 +510,6 @@ function VerifyEmailContent() {
           height: 7px;
           border-radius: 50%;
           background: currentColor;
-          box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.08);
         }
 
         .verify-heading {
@@ -516,7 +564,6 @@ function VerifyEmailContent() {
         .verify-instructions-icon svg {
           width: 20px;
           height: 20px;
-          flex-shrink: 0;
         }
 
         .verify-instructions h2 {
@@ -543,13 +590,6 @@ function VerifyEmailContent() {
           line-height: 1.6;
         }
 
-        .verify-spam-note svg {
-          width: 15px;
-          height: 15px;
-          flex-shrink: 0;
-          color: #059669;
-        }
-
         .verify-primary-btn {
           display: flex;
           align-items: center;
@@ -571,12 +611,28 @@ function VerifyEmailContent() {
         .verify-primary-btn svg {
           width: 17px;
           height: 17px;
-          flex-shrink: 0;
           transition: transform 0.2s ease;
         }
 
         .verify-primary-btn:hover svg {
           transform: translateX(3px);
+        }
+
+        .verify-signup-link {
+          margin-top: 16px;
+          text-align: center;
+          font-size: 12px;
+          color: #64748b;
+        }
+
+        .verify-signup-link a {
+          color: #7c3aed;
+          font-weight: 600;
+          text-decoration: none;
+        }
+
+        .verify-signup-link a:hover {
+          text-decoration: underline;
         }
 
         .verify-security {
@@ -592,7 +648,6 @@ function VerifyEmailContent() {
         .verify-security svg {
           width: 15px;
           height: 15px;
-          flex-shrink: 0;
           color: #7c3aed;
         }
 
@@ -649,10 +704,6 @@ function VerifyEmailContent() {
         }
 
         @media (max-width: 900px) {
-          .verify-auth-page {
-            min-height: 100vh;
-          }
-
           .verify-visual {
             display: none !important;
           }

@@ -4,16 +4,12 @@ import { cookies } from "next/headers";
 
 export async function GET(request: Request) {
   const url = new URL(request.url);
-
   const tokenHash = url.searchParams.get("token_hash");
   const type = url.searchParams.get("type");
 
-  const origin = url.origin;
-
-  // Only accept signup confirmation links.
   if (!tokenHash || type !== "signup") {
     return NextResponse.redirect(
-      new URL("/verify-email?error=invalid_link", origin)
+      new URL("/verify-email?error=invalid_link", url.origin)
     );
   }
 
@@ -26,7 +22,7 @@ export async function GET(request: Request) {
     console.error("Supabase environment variables are missing.");
 
     return NextResponse.redirect(
-      new URL("/verify-email?error=verification_failed", origin)
+      new URL("/verify-email?error=verification_failed", url.origin)
     );
   }
 
@@ -56,11 +52,11 @@ export async function GET(request: Request) {
     console.error("Email verification failed:", error.message);
 
     return NextResponse.redirect(
-      new URL("/verify-email?error=verification_failed", origin)
+      new URL("/verify-email?error=verification_failed", url.origin)
     );
   }
 
   return NextResponse.redirect(
-    new URL("/verify-email?verified=true", origin)
+    new URL("/verify-email?verified=true", url.origin)
   );
 }

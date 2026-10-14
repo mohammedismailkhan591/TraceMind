@@ -119,8 +119,12 @@ export default function ResetPasswordPage() {
     }
 
     // 4. Confirm that a valid session exists.
+    console.log("[RESET DEBUG] Checking session...");
     const { data, error } = await supabase.auth.getSession();
-
+console.log("[RESET DEBUG] Session check finished", {
+  hasSession: Boolean(data.session),
+  error: error?.message ?? null,
+});
     if (!active) return;
 
     if (error || !data.session) {

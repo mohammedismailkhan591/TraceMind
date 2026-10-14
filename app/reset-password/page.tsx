@@ -120,7 +120,23 @@ export default function ResetPasswordPage() {
 
     // 4. Confirm that a valid session exists.
     console.log("[RESET DEBUG] Checking session...");
-    const { data, error } = await supabase.auth.getSession();
+    const sessionCheck = await Promise.race([supabase.auth.getSession(),
+  new Promise<{
+    data: { session: null };
+    error: Error;
+  }>((resolve) =>
+    setTimeout(
+      () =>
+        resolve({
+          data: { session: null },
+          error: new Error("Session check timed out"),
+        }),
+      10000
+    )
+  ),
+]);
+
+const { data, error } = sessionCheck;
 console.log("[RESET DEBUG] Session check finished", {
   hasSession: Boolean(data.session),
   error: error?.message ?? null,

@@ -29,103 +29,127 @@ export default function ResetPasswordPage() {
     let active = true;
 
     async function checkSession() {
-      const params = new URLSearchParams(window.location.search);
-      const code = params.get("code");
+  try {
+    const params = new URLSearchParams(window.location.search);
+    const hashParams = new URLSearchParams(
+      window.location.hash.replace(/^#/, "")
+    );
 
-if (code) {
-  const { error } =
-    await supabase.auth.exchangeCodeForSession(code);
+    // 1. Handle authentication errors returned by Supabase.
+    const authError =
+      params.get("error_description") ||
+      params.get("error") ||
+      hashParams.get("error_description") ||
+      hashParams.get("error");
 
-  if (error) {
-    if (active) {
-      setMessage(
-        "This password-reset link is invalid or expired. Please request a new one."
-      );
-      setMessageType("error");
-      setCheckingSession(false);
+    if (authError) {
+      if (active) {
+        setMessage(authError.replace(/\+/g, " "));
+        setMessageType("error");
+        setSessionReady(false);
+        setCheckingSession(false);
+      }
+      return;
     }
-    return;
-  }
 
-  window.history.replaceState(
-    {},
-    document.title,
-    window.location.pathname
-  );
-}
-      const hashParams = new URLSearchParams(
-        window.location.hash.replace(/^#/, "")
-      );
+    // 2. Handle PKCE authorization codes.
+    const code = params.get("code");
 
-      const authError =
-        params.get("error_description") ||
-        params.get("error") ||
-        hashParams.get("error_description") ||
-        hashParams.get("error");
+    if (code) {
+      const { error } =
+        await supabase.auth.exchangeCodeForSession(code);
 
-      if (authError) {
+      if (error) {
+        console.error(
+          "[PASSWORD RESET] Code exchange failed:",
+          error.message
+        );
+
         if (active) {
           setMessage(
-            authError.replace(/\+/g, " ")
+            "We couldn't verify this reset link. Please request a new one."
           );
           setMessageType("error");
+          setSessionReady(false);
           setCheckingSession(false);
         }
         return;
       }
 
-      // Some Supabase recovery links provide tokens in the URL hash.
-      const accessToken = hashParams.get("access_token");
-      const refreshToken = hashParams.get("refresh_token");
-      const hashType = hashParams.get("type");
-
-      if (accessToken && refreshToken && hashType === "recovery") {
-        const { error } = await supabase.auth.setSession({
-          access_token: accessToken,
-          refresh_token: refreshToken,
-        });
-
-        if (error) {
-          if (active) {
-            setMessage(
-              "This password reset link is invalid or expired. Please request a new one."
-            );
-            setMessageType("error");
-            setCheckingSession(false);
-          }
-          return;
-        }
-
-        // Remove tokens from the visible address bar.
-        window.history.replaceState(
-          {},
-          document.title,
-          window.location.pathname
-        );
-      }
-
-      const { data, error } = await supabase.auth.getSession();
-
-      if (!active) return;
-
-      if (error || !data.session) {
-        setMessage(
-          "Your reset session could not be found. Please request a new password reset link."
-        );
-        setMessageType("error");
-        setSessionReady(false);
-      } else {
-        setSessionReady(true);
-      }
-
-      setCheckingSession(false);
+      window.history.replaceState(
+        {},
+        document.title,
+        window.location.pathname
+      );
     }
 
-    checkSession();
+    // 3. Handle recovery tokens in the URL fragment.
+    const accessToken = hashParams.get("access_token");
+    const refreshToken = hashParams.get("refresh_token");
+    const hashType = hashParams.get("type");
 
-    return () => {
-      active = false;
-    };
+    if (accessToken && refreshToken && hashType === "recovery") {
+      const { error } = await supabase.auth.setSession({
+        access_token: accessToken,
+        refresh_token: refreshToken,
+      });
+
+      if (error) {
+        console.error(
+          "[PASSWORD RESET] Session creation failed:",
+          error.message
+        );
+
+        if (active) {
+          setMessage(
+            "We couldn't establish your reset session. Please request a new reset link."
+          );
+          setMessageType("error");
+          setSessionReady(false);
+          setCheckingSession(false);
+        }
+        return;
+      }
+
+      window.history.replaceState(
+        {},
+        document.title,
+        window.location.pathname
+      );
+    }
+
+    // 4. Confirm that a valid session exists.
+    const { data, error } = await supabase.auth.getSession();
+
+    if (!active) return;
+
+    if (error || !data.session) {
+      console.error(
+        "[PASSWORD RESET] No active recovery session:",
+        error?.message || "No session found"
+      );
+
+      setMessage(
+        "Your reset session could not be found. Please request a new password-reset link."
+      );
+      setMessageType("error");
+      setSessionReady(false);
+    } else {
+      setSessionReady(true);
+    }
+
+    setCheckingSession(false);
+  } catch (error) {
+    console.error("[PASSWORD RESET] Unexpected error:", error);
+
+    if (active) {
+      setMessage("Something went wrong while verifying your reset link.");
+      setMessageType("error");
+      setSessionReady(false);
+      setCheckingSession(false);
+    }
+  }
+}
   }, [supabase]);
 
   const passwordStrength = (() => {

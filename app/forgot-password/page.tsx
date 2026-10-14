@@ -37,8 +37,7 @@ export default function ForgotPassword() {
     try {
       const supabase = createClient();
 
-const redirectTo =
-  "https://trace-mind-six.vercel.app/reset-password";
+const redirectTo ="https://trace-mind-six.vercel.app/auth/callback?next=/reset-password";
 const { error } = await supabase.auth.resetPasswordForEmail(
   email.trim().toLowerCase(),
   { redirectTo }

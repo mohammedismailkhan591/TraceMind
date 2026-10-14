@@ -10,6 +10,7 @@ export default function SettingsPage() {
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [savingNotifications, setSavingNotifications] = useState(false);
 
   const [userId, setUserId] = useState("");
   const [email, setEmail] = useState("");
@@ -64,6 +65,26 @@ export default function SettingsPage() {
       setAvatarUrl(data.avatar_url || "");
     }
 
+    const {
+      data: preferences,
+      error: preferencesError,
+    } = await supabase
+      .from("notification_preferences")
+      .select("email_notifications, deadline_reminders, weekly_summary")
+      .eq("user_id", user.id)
+      .maybeSingle();
+
+    if (preferencesError) {
+      console.error("Could not load notification preferences:", preferencesError);
+      setError(
+        "Could not load notification preferences. Please run the TraceMind notification SQL setup."
+      );
+    } else if (preferences) {
+      setEmailNotifications(preferences.email_notifications ?? true);
+      setDeadlineReminders(preferences.deadline_reminders ?? true);
+      setWeeklySummary(preferences.weekly_summary ?? false);
+    }
+
     setLoading(false);
   }
 
@@ -91,6 +112,41 @@ export default function SettingsPage() {
 
     setMessage("Profile updated successfully.");
     setSaving(false);
+  }
+
+  async function saveNotificationPreferences() {
+    if (!userId) return;
+
+    setSavingNotifications(true);
+    setMessage("");
+    setError("");
+
+    const { error } = await supabase
+      .from("notification_preferences")
+      .upsert(
+        {
+          user_id: userId,
+          email_notifications: emailNotifications,
+          deadline_reminders: deadlineReminders,
+          weekly_summary: weeklySummary,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: "user_id" }
+      );
+
+    if (error) {
+      console.error("Could not save notification preferences:", error);
+      setError(
+        error.message.includes("notification_preferences")
+          ? "Notification settings are not configured yet. Run the SQL setup provided for TraceMind notifications."
+          : error.message
+      );
+      setSavingNotifications(false);
+      return;
+    }
+
+    setMessage("Notification preferences saved successfully.");
+    setSavingNotifications(false);
   }
 
   async function changePassword() {
@@ -358,6 +414,14 @@ export default function SettingsPage() {
                 onChange={setWeeklySummary}
               />
             </div>
+
+            <button
+              className="primary-button notification-save-button"
+              onClick={saveNotificationPreferences}
+              disabled={savingNotifications || loading}
+            >
+              {savingNotifications ? "Saving preferences..." : "Save notification settings"}
+            </button>
           </section>
 
           {/* SECURITY */}
@@ -752,6 +816,11 @@ export default function SettingsPage() {
           cursor: not-allowed;
         }
 
+        .notification-save-button {
+          margin-top: 20px;
+          width: 100%;
+        }
+
         .setting-row,
         .security-item {
           display: flex;
@@ -982,6 +1051,7 @@ function Toggle({
       className={`toggle ${checked ? "on" : "off"}`}
       onClick={() => onChange(!checked)}
       aria-label={checked ? "Disable setting" : "Enable setting"}
+      aria-pressed={checked}
     >
       <span className="toggle-dot" />
     </button>

@@ -1,25 +1,45 @@
 import { NextResponse } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
+import type { EmailOtpType } from "@supabase/supabase-js";
 
 export async function GET(request: Request) {
-  const url = new URL(request.url);
+  const requestUrl = new URL(request.url);
 
-  const tokenHash = url.searchParams.get("token_hash");
-  const type = url.searchParams.get("type");
+  const tokenHash = requestUrl.searchParams.get("token_hash");
+  const type = requestUrl.searchParams.get("type");
 
-  const successUrl = new URL("/verify-email?verified=true", url.origin);
+  // Keep the redirects on the same origin as the incoming request.
+  const successUrl = new URL(
+    "/verify-email?verified=true",
+    requestUrl.origin
+  );
+
   const invalidUrl = new URL(
     "/verify-email?error=invalid_link",
-    url.origin
-  );
-  const errorUrl = new URL(
-    "/verify-email?error=verification_failed",
-    url.origin
+    requestUrl.origin
   );
 
-  // The callback must receive the token hash from the email link.
-  if (!tokenHash || type !== "signup") {
+  const errorUrl = new URL(
+    "/verify-email?error=verification_failed",
+    requestUrl.origin
+  );
+
+  // A token hash and a valid OTP type are required.
+  const allowedTypes: EmailOtpType[] = [
+    "signup",
+    "email",
+    "recovery",
+    "invite",
+    "magiclink",
+    "email_change",
+  ];
+
+  if (
+    !tokenHash ||
+    !type ||
+    !allowedTypes.includes(type as EmailOtpType)
+  ) {
     return NextResponse.redirect(invalidUrl);
   }
 
@@ -27,43 +47,55 @@ export async function GET(request: Request) {
   const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
   if (!supabaseUrl || !supabaseAnonKey) {
-    console.error("Supabase environment variables are missing.");
+    console.error(
+      "Supabase configuration error: required environment variables are missing."
+    );
+
     return NextResponse.redirect(errorUrl);
   }
 
-  const cookieStore = await cookies();
-
-  const supabase = createServerClient(
-    supabaseUrl,
-    supabaseAnonKey,
-    {
-      cookies: {
-        getAll() {
-          return cookieStore.getAll();
-        },
-        setAll(cookiesToSet) {
-          cookiesToSet.forEach(({ name, value, options }) => {
-            cookieStore.set(name, value, options);
-          });
-        },
-      },
-    }
-  );
-
   try {
+    const cookieStore = await cookies();
+
+    const supabase = createServerClient(
+      supabaseUrl,
+      supabaseAnonKey,
+      {
+        cookies: {
+          getAll() {
+            return cookieStore.getAll();
+          },
+
+          setAll(cookiesToSet) {
+            cookiesToSet.forEach(({ name, value, options }) => {
+              cookieStore.set(name, value, options);
+            });
+          },
+        },
+      }
+    );
+
     const { error } = await supabase.auth.verifyOtp({
       token_hash: tokenHash,
-      type: "signup",
+      type: type as EmailOtpType,
     });
 
     if (error) {
-      console.error("Signup verification failed:", error.message);
+      console.error(
+        "Email verification failed:",
+        error.message
+      );
+
       return NextResponse.redirect(errorUrl);
     }
 
     return NextResponse.redirect(successUrl);
   } catch (error) {
-    console.error("Unexpected verification error:", error);
+    console.error(
+      "Unexpected error during email verification:",
+      error
+    );
+
     return NextResponse.redirect(errorUrl);
   }
 }

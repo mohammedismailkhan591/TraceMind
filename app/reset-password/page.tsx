@@ -26,49 +26,36 @@ export default function ResetPasswordPage() {
   const supabase = createClient();
 
   useEffect(() => {
-    let active = true;
+  let active = true;
 
-    async function checkSession() {
-  try {
-    const params = new URLSearchParams(window.location.search);
-    const hashParams = new URLSearchParams(
-      window.location.hash.replace(/^#/, "")
-    );
-
-    // 1. Handle authentication errors returned by Supabase.
-    const authError =
-      params.get("error_description") ||
-      params.get("error") ||
-      hashParams.get("error_description") ||
-      hashParams.get("error");
-
-    if (authError) {
+  async function checkSession() {
+    // Never leave the loading screen visible indefinitely.
+    const timeoutId = window.setTimeout(() => {
       if (active) {
-        setMessage(authError.replace(/\+/g, " "));
+        setMessage(
+          "Verification is taking too long. Please request a new reset link and try again."
+        );
         setMessageType("error");
         setSessionReady(false);
         setCheckingSession(false);
       }
-      return;
-    }
+    }, 15000);
 
-    // 2. Handle PKCE authorization codes.
-    const code = params.get("code");
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const hashParams = new URLSearchParams(
+        window.location.hash.replace(/^#/, "")
+      );
 
-    if (code) {
-      const { error } =
-        await supabase.auth.exchangeCodeForSession(code);
+      const authError =
+        params.get("error_description") ||
+        params.get("error") ||
+        hashParams.get("error_description") ||
+        hashParams.get("error");
 
-      if (error) {
-        console.error(
-          "[PASSWORD RESET] Code exchange failed:",
-          error.message
-        );
-
+      if (authError) {
         if (active) {
-          setMessage(
-            "We couldn't verify this reset link. Please request a new one."
-          );
+          setMessage(authError.replace(/\+/g, " "));
           setMessageType("error");
           setSessionReady(false);
           setCheckingSession(false);
@@ -76,101 +63,110 @@ export default function ResetPasswordPage() {
         return;
       }
 
-      window.history.replaceState(
-        {},
-        document.title,
-        window.location.pathname
-      );
-    }
+      // Handle a PKCE authorization code.
+      const code = params.get("code");
 
-    // 3. Handle recovery tokens in the URL fragment.
-    const accessToken = hashParams.get("access_token");
-    const refreshToken = hashParams.get("refresh_token");
-    const hashType = hashParams.get("type");
+      if (code) {
+        const { error } =
+          await supabase.auth.exchangeCodeForSession(code);
 
-    if (accessToken && refreshToken && hashType === "recovery") {
-      const { error } = await supabase.auth.setSession({
-        access_token: accessToken,
-        refresh_token: refreshToken,
-      });
+        if (error) {
+          console.error("[RESET] Code exchange failed:", error.message);
 
-      if (error) {
-        console.error(
-          "[PASSWORD RESET] Session creation failed:",
-          error.message
-        );
-
-        if (active) {
-          setMessage(
-            "We couldn't establish your reset session. Please request a new reset link."
-          );
-          setMessageType("error");
-          setSessionReady(false);
-          setCheckingSession(false);
+          if (active) {
+            setMessage(
+              "This reset link could not be verified. Please request a new one."
+            );
+            setMessageType("error");
+            setSessionReady(false);
+            setCheckingSession(false);
+          }
+          return;
         }
-        return;
+
+        window.history.replaceState(
+          {},
+          document.title,
+          window.location.pathname
+        );
+      } else {
+        // Handle tokens returned in the URL fragment.
+        const accessToken = hashParams.get("access_token");
+        const refreshToken = hashParams.get("refresh_token");
+        const hashType = hashParams.get("type");
+
+        if (
+          accessToken &&
+          refreshToken &&
+          hashType === "recovery"
+        ) {
+          const { error } = await supabase.auth.setSession({
+            access_token: accessToken,
+            refresh_token: refreshToken,
+          });
+
+          if (error) {
+            console.error(
+              "[RESET] Session creation failed:",
+              error.message
+            );
+
+            if (active) {
+              setMessage(
+                "This reset link could not be verified. Please request a new one."
+              );
+              setMessageType("error");
+              setSessionReady(false);
+              setCheckingSession(false);
+            }
+            return;
+          }
+
+          window.history.replaceState(
+            {},
+            document.title,
+            window.location.pathname
+          );
+        }
       }
 
-      window.history.replaceState(
-        {},
-        document.title,
-        window.location.pathname
-      );
-    }
+      const { data, error } = await supabase.auth.getSession();
 
-    // 4. Confirm that a valid session exists.
-    console.log("[RESET DEBUG] Checking session...");
-    const sessionCheck = await Promise.race([supabase.auth.getSession(),
-  new Promise<{
-    data: { session: null };
-    error: Error;
-  }>((resolve) =>
-    setTimeout(
-      () =>
-        resolve({
-          data: { session: null },
-          error: new Error("Session check timed out"),
-        }),
-      10000
-    )
-  ),
-]);
+      if (!active) return;
 
-const { data, error } = sessionCheck;
-console.log("[RESET DEBUG] Session check finished", {
-  hasSession: Boolean(data.session),
-  error: error?.message ?? null,
-});
-    if (!active) return;
+      if (error || !data.session) {
+        setMessage(
+          "Your reset session could not be found. Please request a new password-reset link."
+        );
+        setMessageType("error");
+        setSessionReady(false);
+      } else {
+        setSessionReady(true);
+      }
 
-    if (error || !data.session) {
-      console.error(
-        "[PASSWORD RESET] No active recovery session:",
-        error?.message || "No session found"
-      );
-
-      setMessage(
-        "Your reset session could not be found. Please request a new password-reset link."
-      );
-      setMessageType("error");
-      setSessionReady(false);
-    } else {
-      setSessionReady(true);
-    }
-
-    setCheckingSession(false);
-  } catch (error) {
-    console.error("[PASSWORD RESET] Unexpected error:", error);
-
-    if (active) {
-      setMessage("Something went wrong while verifying your reset link.");
-      setMessageType("error");
-      setSessionReady(false);
       setCheckingSession(false);
+    } catch (error) {
+      console.error("[RESET] Verification failed:", error);
+
+      if (active) {
+        setMessage(
+          "Something went wrong while verifying your reset link."
+        );
+        setMessageType("error");
+        setSessionReady(false);
+        setCheckingSession(false);
+      }
+    } finally {
+      window.clearTimeout(timeoutId);
     }
   }
-}
-  }, []);
+
+  checkSession();
+
+  return () => {
+    active = false;
+  };
+}, []);
 
   const passwordStrength = (() => {
     let score = 0;

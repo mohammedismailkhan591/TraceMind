@@ -65,7 +65,34 @@ export default function ResetPasswordPage() {
 
       // Handle a PKCE authorization code.
      const code = params.get("code");
+const tokenHash = params.get("token_hash");
+const tokenType = params.get("type");
 
+if (tokenHash && tokenType === "recovery") {
+  const { data, error } = await supabase.auth.verifyOtp({
+    token_hash: tokenHash,
+    type: "recovery",
+  });
+
+  if (error || !data.session) {
+    console.error("[RESET] Recovery verification failed:", error?.message);
+
+    setMessage(
+      error?.message ||
+        "This reset link is invalid or expired. Please request a new one."
+    );
+
+    setSessionReady(false);
+    setCheckingSession(false);
+    return;
+  }
+
+  window.history.replaceState(
+    {},
+    document.title,
+    window.location.pathname
+  );
+}
 if (code) {
   const { data, error } =
     await supabase.auth.exchangeCodeForSession(code);

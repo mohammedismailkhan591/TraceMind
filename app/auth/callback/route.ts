@@ -7,20 +7,27 @@ export async function GET(request: Request) {
 
   const code = requestUrl.searchParams.get("code");
   const next = requestUrl.searchParams.get("next") || "/memories";
+
   const errorCode = requestUrl.searchParams.get("error_code");
   const errorDescription = requestUrl.searchParams.get("error_description");
 
-  // If Supabase rejected the link, return a useful error.
   if (errorCode || errorDescription) {
-    const destination = new URL("/forgot-password", requestUrl.origin);
-    destination.searchParams.set("error", "reset_link_invalid");
+    const destination = new URL(
+      "/forgot-password?error=reset_link_invalid",
+      requestUrl.origin
+    );
+
     return NextResponse.redirect(destination);
   }
 
-  // A PKCE recovery link should contain a code.
   if (!code) {
-    const destination = new URL("/forgot-password", requestUrl.origin);
-    destination.searchParams.set("error", "missing_code");
+    console.error("[AUTH CALLBACK] Missing authorization code");
+
+    const destination = new URL(
+      "/forgot-password?error=missing_code",
+      requestUrl.origin
+    );
+
     return NextResponse.redirect(destination);
   }
 
@@ -36,7 +43,7 @@ export async function GET(request: Request) {
   const cookieStore = await cookies();
 
   const response = NextResponse.redirect(
-    new URL(next, requestUrl.origin)
+    new URL("/reset-password", requestUrl.origin)
   );
 
   const supabase = createServerClient(supabaseUrl, supabaseKey, {
@@ -44,11 +51,12 @@ export async function GET(request: Request) {
       getAll() {
         return cookieStore.getAll();
       },
+
       setAll(cookiesToSet) {
-        cookiesToSet.forEach(({ name, value, options }) => {
+        for (const { name, value, options } of cookiesToSet) {
           cookieStore.set(name, value, options);
           response.cookies.set(name, value, options);
-        });
+        }
       },
     },
   });
@@ -62,13 +70,16 @@ export async function GET(request: Request) {
       error?.message ?? "No session returned"
     );
 
-    const destination = new URL("/forgot-password", requestUrl.origin);
-    destination.searchParams.set("error", "reset_link_invalid");
-
-    return NextResponse.redirect(destination);
+    return NextResponse.redirect(
+      new URL(
+        "/forgot-password?error=reset_link_invalid",
+        requestUrl.origin
+      )
+    );
   }
 
-  // Keep the recovery destination restricted to local paths.
+  // Preserve other authentication destinations while restricting redirects
+  // to local application paths.
   const safeNext =
     next.startsWith("/") && !next.startsWith("//")
       ? next

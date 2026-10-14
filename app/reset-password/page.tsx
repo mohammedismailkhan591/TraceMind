@@ -30,6 +30,29 @@ export default function ResetPasswordPage() {
 
     async function checkSession() {
       const params = new URLSearchParams(window.location.search);
+      const code = params.get("code");
+
+if (code) {
+  const { error } =
+    await supabase.auth.exchangeCodeForSession(code);
+
+  if (error) {
+    if (active) {
+      setMessage(
+        "This password-reset link is invalid or expired. Please request a new one."
+      );
+      setMessageType("error");
+      setCheckingSession(false);
+    }
+    return;
+  }
+
+  window.history.replaceState(
+    {},
+    document.title,
+    window.location.pathname
+  );
+}
       const hashParams = new URLSearchParams(
         window.location.hash.replace(/^#/, "")
       );

@@ -71,7 +71,14 @@ export default function AppShell({ children }: AppShellProps) {
 
   useEffect(() => { setMoreOpen(false); }, [pathname]);
 
-  const isAuthPage = ["/login", "/signup", "/register", "/forgot-password", "/reset-password"].includes(pathname) || pathname.startsWith("/auth");
+const isAuthPage = [
+  "/login",
+  "/signup",
+  "/register",
+  "/forgot-password",
+  "/reset-password",
+  "/verify-email",
+].includes(pathname) || pathname.startsWith("/auth");
   const showMobileProfile = signedIn === true;
   if (isAuthPage) return <>{children}</>;
 

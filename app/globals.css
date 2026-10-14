@@ -1,3 +1,4 @@
+@import "tailwindcss";
 @import url('https://fonts.googleapis.com/css2?family=Geist:wght@400;450;500;550;600;650;700&display=swap');
 
 :root {
@@ -314,4 +315,20 @@ form {
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
+}
+/* Fix oversized SVG icons */
+svg {
+  flex-shrink: 0;
+}
+
+/* Keep TraceMind verification page illustrations correctly sized */
+.verify-email-page svg {
+  width: 24px;
+  height: 24px;
+}
+
+/* Prevent decorative icons from overflowing */
+.verify-email-page .verify-illustration svg {
+  width: 48px;
+  height: 48px;
 }

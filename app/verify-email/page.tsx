@@ -3,10 +3,12 @@
 import Link from "next/link";
 import { Suspense } from "react";
 import { useSearchParams } from "next/navigation";
+import Logo from "../../components/Logo";
 
 function VerifyEmailContent() {
   const searchParams = useSearchParams();
   const error = searchParams.get("error");
+  const verified = searchParams.get("verified");
 
   const errorMessages: Record<string, string> = {
     invalid_link:
@@ -19,444 +21,616 @@ function VerifyEmailContent() {
   const hasError = Boolean(errorMessage);
 
   return (
-    <main className="relative flex min-h-screen items-center justify-center overflow-hidden bg-[#080611] px-4 py-10 text-white selection:bg-violet-500/30 sm:px-6">
-      {/* Ambient background */}
-      <div
-        className="pointer-events-none absolute inset-0 overflow-hidden"
-        aria-hidden="true"
-      >
-        <div className="absolute -left-48 -top-40 h-[480px] w-[480px] rounded-full bg-violet-700/20 blur-[140px] animate-[ambient_10s_ease-in-out_infinite]" />
+    <main className="auth-page verify-auth-page">
+      {/* LEFT SIDE — MATCHES LOGIN */}
+      <section className="auth-visual verify-visual">
+        <Logo />
 
-        <div className="absolute -bottom-48 -right-40 h-[500px] w-[500px] rounded-full bg-fuchsia-600/[0.12] blur-[150px] animate-[ambient_12s_ease-in-out_infinite_reverse]" />
-
-        <div className="absolute left-1/2 top-1/2 h-[650px] w-[650px] -translate-x-1/2 -translate-y-1/2 rounded-full border border-violet-300/[0.045]" />
-
-        <div className="absolute left-1/2 top-1/2 h-[470px] w-[470px] -translate-x-1/2 -translate-y-1/2 rounded-full border border-white/[0.035]" />
-
-        <div
-          className="absolute inset-0 opacity-[0.12]"
-          style={{
-            backgroundImage:
-              "radial-gradient(rgba(255,255,255,0.35) 0.7px, transparent 0.7px)",
-            backgroundSize: "25px 25px",
-          }}
-        />
-
-        <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-violet-400/40 to-transparent" />
-      </div>
-
-      {/* Main content */}
-      <section className="relative z-10 w-full max-w-[470px] animate-[fadeInUp_0.8s_cubic-bezier(0.16,1,0.3,1)_both]">
-        {/* Brand */}
-        <Link
-          href="/"
-          className="group mb-8 flex items-center justify-center gap-3 sm:mb-10"
-          aria-label="TraceMind home"
-        >
-          <div className="relative flex h-12 w-12 items-center justify-center overflow-hidden rounded-[17px] border border-violet-300/25 bg-gradient-to-br from-violet-500 via-violet-600 to-purple-800 shadow-[0_8px_35px_rgba(124,58,237,0.28)] transition duration-300 group-hover:scale-105 group-hover:shadow-[0_8px_45px_rgba(139,92,246,0.42)]">
-            <div className="absolute inset-0 bg-gradient-to-br from-white/20 to-transparent" />
-
-            <svg
-              viewBox="0 0 24 24"
-              fill="none"
-              className="relative h-6 w-6 text-white"
-              aria-hidden="true"
-            >
-              <path
-                d="M4 7.5 12 3l8 4.5v9L12 21l-8-4.5v-9Z"
+        <div className="auth-visual-content">
+          <div className="verify-visual-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none">
+              <rect
+                x="3"
+                y="5"
+                width="18"
+                height="14"
+                rx="3"
                 stroke="currentColor"
-                strokeWidth="1.6"
+                strokeWidth="1.5"
+              />
+              <path
+                d="m4 7 8 6 8-6"
+                stroke="currentColor"
+                strokeWidth="1.5"
                 strokeLinejoin="round"
               />
-              <circle
-                cx="12"
-                cy="12"
-                r="3"
-                stroke="currentColor"
-                strokeWidth="1.6"
-              />
               <path
-                d="m12 9 2-2m-2 8 2 2"
+                d="m9 15 2 2 4-4"
                 stroke="currentColor"
-                strokeWidth="1.6"
+                strokeWidth="1.5"
                 strokeLinecap="round"
+                strokeLinejoin="round"
               />
             </svg>
           </div>
 
-          <div className="flex flex-col">
-            <span className="text-[26px] font-bold leading-none tracking-[-1.4px]">
-              Trace<span className="text-violet-400">Mind</span>
-            </span>
+          <span className="verify-eyebrow">
+            {hasError ? "LET'S FIX THIS" : "ONE LAST STEP"}
+          </span>
 
-            <span className="mt-1.5 text-[9px] font-medium uppercase tracking-[3px] text-zinc-500">
-              Your second brain
-            </span>
-          </div>
-        </Link>
-
-        {/* Verification card */}
-        <div className="group/card relative overflow-hidden rounded-[30px] border border-white/[0.10] bg-[#100d1b]/80 shadow-[0_35px_100px_rgba(0,0,0,0.45)] backdrop-blur-2xl">
-          {/* Top gradient */}
-          <div className="h-[3px] w-full bg-gradient-to-r from-violet-600 via-fuchsia-400 to-violet-500" />
-
-          {/* Subtle inner glow */}
-          <div
-            className="pointer-events-none absolute left-1/2 top-0 h-48 w-72 -translate-x-1/2 rounded-full bg-violet-500/[0.07] blur-[70px]"
-            aria-hidden="true"
-          />
-
-          <div className="relative px-6 pb-8 pt-9 sm:px-10 sm:pb-10 sm:pt-11">
-            {/* Illustration */}
-            <div className="relative mx-auto mb-8 flex h-[150px] w-[150px] items-center justify-center">
-              {/* Outer glow */}
-              <div
-                className={`absolute inset-2 rounded-full blur-2xl ${
-                  hasError ? "bg-rose-500/[0.10]" : "bg-violet-500/[0.14]"
-                }`}
-              />
-
-              {/* Orbit rings */}
-              <div className="absolute inset-1 rounded-full border border-white/[0.07]" />
-
-              <div className="absolute inset-3 rounded-full border border-violet-400/[0.12]" />
-
-              <div className="absolute inset-0 animate-[spin_35s_linear_infinite] rounded-full border border-dashed border-violet-300/[0.18]" />
-
-              {/* Main icon container */}
-              <div
-                className={`relative flex h-[100px] w-[100px] items-center justify-center rounded-[30px] border shadow-[0_15px_50px_rgba(0,0,0,0.25)] transition duration-500 ${
-                  hasError
-                    ? "border-rose-300/20 bg-gradient-to-br from-rose-500/[0.15] to-orange-500/[0.04]"
-                    : "border-violet-300/25 bg-gradient-to-br from-violet-500/[0.22] via-purple-500/[0.12] to-fuchsia-500/[0.06]"
-                }`}
-              >
-                {!hasError && (
-                  <div className="absolute inset-0 rounded-[30px] bg-gradient-to-br from-white/[0.06] to-transparent" />
-                )}
-
-                {hasError ? (
-                  <svg
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    className="relative h-11 w-11 text-rose-300"
-                    aria-hidden="true"
-                  >
-                    <circle
-                      cx="12"
-                      cy="12"
-                      r="9"
-                      stroke="currentColor"
-                      strokeWidth="1.5"
-                    />
-                    <path
-                      d="m9 9 6 6m0-6-6 6"
-                      stroke="currentColor"
-                      strokeWidth="1.8"
-                      strokeLinecap="round"
-                    />
-                  </svg>
-                ) : (
-                  <svg
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    className="relative h-12 w-12 text-violet-300"
-                    aria-hidden="true"
-                  >
-                    <rect
-                      x="3"
-                      y="5"
-                      width="18"
-                      height="14"
-                      rx="3"
-                      stroke="currentColor"
-                      strokeWidth="1.5"
-                    />
-                    <path
-                      d="m4 7 8 6 8-6"
-                      stroke="currentColor"
-                      strokeWidth="1.5"
-                      strokeLinejoin="round"
-                    />
-                    <path
-                      d="M16.5 3.5h4m-2-2v4"
-                      stroke="currentColor"
-                      strokeWidth="1.3"
-                      strokeLinecap="round"
-                    />
-                  </svg>
-                )}
-              </div>
-
-              {/* Floating status icon */}
-              {!hasError && (
-                <div className="absolute right-0 top-5 flex h-9 w-9 animate-[float_4s_ease-in-out_infinite] items-center justify-center rounded-[13px] border border-emerald-300/20 bg-[#10251f] shadow-[0_8px_25px_rgba(0,0,0,0.3)]">
-                  <svg
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    className="h-[17px] w-[17px] text-emerald-300"
-                    aria-hidden="true"
-                  >
-                    <path
-                      d="m5 12 4 4L19 6"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    />
-                  </svg>
-                </div>
-              )}
-
-              {/* Decorative sparkle */}
-              <div className="absolute bottom-3 left-1 flex h-8 w-8 animate-[float_5s_ease-in-out_infinite] items-center justify-center rounded-xl border border-violet-300/20 bg-[#1b1430] text-violet-300 shadow-lg">
-                <svg
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  className="h-4 w-4"
-                  aria-hidden="true"
-                >
-                  <path
-                    d="m12 3 2.1 5.9L20 11l-5.9 2.1L12 19l-2.1-5.9L4 11l5.9-2.1L12 3Z"
-                    stroke="currentColor"
-                    strokeWidth="1.5"
-                    strokeLinejoin="round"
-                  />
-                </svg>
-              </div>
-
-              {/* Small orbiting dot */}
-              {!hasError && (
-                <span className="absolute left-4 top-7 h-2 w-2 rounded-full bg-fuchsia-300 shadow-[0_0_14px_rgba(232,121,249,0.7)]" />
-              )}
-            </div>
-
-            {/* Status badge */}
-            <div className="mb-5 flex justify-center">
-              <span
-                className={`inline-flex items-center gap-2 rounded-full border px-4 py-2 text-[10px] font-semibold uppercase tracking-[1.7px] ${
-                  hasError
-                    ? "border-rose-400/20 bg-rose-400/[0.07] text-rose-300"
-                    : "border-violet-400/20 bg-violet-400/[0.07] text-violet-300"
-                }`}
-              >
-                <span
-                  className={`relative flex h-2 w-2 items-center justify-center rounded-full ${
-                    hasError ? "bg-rose-400" : "bg-violet-400"
-                  }`}
-                >
-                  {!hasError && (
-                    <span className="absolute inset-0 animate-ping rounded-full bg-violet-400 opacity-50" />
-                  )}
-                </span>
-
-                {hasError ? "Verification issue" : "One last step"}
-              </span>
-            </div>
-
-            {/* Heading */}
-            <h1 className="text-center text-[34px] font-semibold leading-[1.13] tracking-[-1.6px] sm:text-[40px]">
-              {hasError ? (
-                <>
-                  Let's get this
-                  <br />
-                  <span className="bg-gradient-to-r from-rose-300 via-pink-300 to-orange-200 bg-clip-text text-transparent">
-                    sorted out.
-                  </span>
-                </>
-              ) : (
-                <>
-                  Check your
-                  <br />
-                  <span className="bg-gradient-to-r from-violet-300 via-fuchsia-300 to-purple-200 bg-clip-text text-transparent">
-                    inbox.
-                  </span>
-                </>
-              )}
-            </h1>
-
-            {/* Description */}
-            <p className="mx-auto mt-5 max-w-[330px] text-center text-[13px] leading-[1.9] text-zinc-400 sm:text-[14px]">
-              {hasError
-                ? errorMessage
-                : "You're almost ready to experience a smarter way to remember. Verify your email address to finish setting up your TraceMind account."}
-            </p>
-
-            {/* Next steps */}
-            {!hasError && (
-              <div className="mt-8 overflow-hidden rounded-2xl border border-white/[0.08] bg-white/[0.025]">
-                <div className="flex items-start gap-3.5 p-4 sm:p-5">
-                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[13px] border border-violet-400/[0.12] bg-violet-500/[0.10] text-violet-300">
-                    <svg
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      className="h-[19px] w-[19px]"
-                      aria-hidden="true"
-                    >
-                      <circle
-                        cx="12"
-                        cy="12"
-                        r="9"
-                        stroke="currentColor"
-                        strokeWidth="1.5"
-                      />
-                      <path
-                        d="M12 11v5m0-8h.01"
-                        stroke="currentColor"
-                        strokeWidth="1.8"
-                        strokeLinecap="round"
-                      />
-                    </svg>
-                  </div>
-
-                  <div className="min-w-0 flex-1">
-                    <p className="text-[13px] font-semibold text-zinc-200">
-                      What happens next?
-                    </p>
-
-                    <p className="mt-1.5 text-[12px] leading-[1.9] text-zinc-500">
-                      Open the email from TraceMind and click the verification
-                      button. Once verified, return here to sign in securely.
-                    </p>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-2 border-t border-white/[0.06] bg-white/[0.015] px-5 py-3">
-                  <svg
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    className="h-4 w-4 shrink-0 text-emerald-300/80"
-                    aria-hidden="true"
-                  >
-                    <path
-                      d="m5 12 4 4L19 6"
-                      stroke="currentColor"
-                      strokeWidth="1.8"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    />
-                  </svg>
-
-                  <span className="text-[10px] leading-5 text-zinc-500">
-                    Remember to check your spam or junk folder.
-                  </span>
-                </div>
-              </div>
+          <h1>
+            {hasError ? (
+              <>
+                Let's get you
+                <br />
+                <span className="verify-highlight">back on track.</span>
+              </>
+            ) : (
+              <>
+                Your next chapter
+                <br />
+                <span className="verify-highlight">starts here.</span>
+              </>
             )}
+          </h1>
 
-            {/* Primary action */}
-            <Link
-              href={hasError ? "/signup" : "/login"}
-              className="group relative mt-8 flex w-full items-center justify-center gap-2.5 overflow-hidden rounded-2xl bg-gradient-to-r from-violet-600 via-purple-600 to-violet-600 bg-[length:200%_100%] px-5 py-[17px] text-[13px] font-semibold text-white shadow-[0_8px_30px_rgba(124,58,237,0.25)] transition-all duration-300 hover:-translate-y-0.5 hover:bg-right hover:shadow-[0_12px_40px_rgba(124,58,237,0.4)] active:translate-y-0"
-            >
-              <span className="absolute inset-0 translate-x-[-120%] bg-gradient-to-r from-transparent via-white/[0.12] to-transparent transition-transform duration-700 group-hover:translate-x-[120%]" />
+          <p>
+            {hasError
+              ? "No worries. Let's get your account verification sorted out so you can continue your TraceMind journey."
+              : "Your ideas, discoveries, and important moments deserve a safe place. One quick step and you're ready to go."}
+          </p>
 
-              <span className="relative">
-                {hasError ? "Back to sign up" : "Continue to login"}
-              </span>
-
-              <svg
-                viewBox="0 0 24 24"
-                fill="none"
-                className="relative h-[17px] w-[17px] transition-transform duration-300 group-hover:translate-x-1"
-                aria-hidden="true"
-              >
-                <path
-                  d="M5 12h14m-6-6 6 6-6 6"
-                  stroke="currentColor"
-                  strokeWidth="1.8"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-              </svg>
-            </Link>
-
-            {/* Reassurance */}
-            <div className="mt-5 flex items-center justify-center gap-2">
-              <svg
-                viewBox="0 0 24 24"
-                fill="none"
-                className="h-3.5 w-3.5 text-zinc-600"
-                aria-hidden="true"
-              >
-                <path
-                  d="M12 22s8-4 8-11V5l-8-3-8 3v6c0 7 8 11 8 11Z"
-                  stroke="currentColor"
-                  strokeWidth="1.5"
-                  strokeLinejoin="round"
-                />
-                <path
-                  d="m9 12 2 2 4-4"
-                  stroke="currentColor"
-                  strokeWidth="1.5"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-              </svg>
-
-              <p className="text-center text-[11px] text-zinc-500">
-                Your account security comes first.
-              </p>
+          <div className="auth-points verify-points">
+            <div>
+              <span className="verify-point-icon">✓</span>
+              Secure account access
             </div>
-          </div>
-
-          {/* Card footer */}
-          <div className="flex items-center justify-between gap-3 border-t border-white/[0.07] bg-white/[0.02] px-6 py-5 sm:px-10">
-            <div className="flex items-center gap-2">
-              <div className="flex h-7 w-7 items-center justify-center rounded-lg border border-white/[0.07] bg-white/[0.035]">
-                <svg
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  className="h-3.5 w-3.5 text-zinc-400"
-                  aria-hidden="true"
-                >
-                  <rect
-                    x="5"
-                    y="10"
-                    width="14"
-                    height="11"
-                    rx="2"
-                    stroke="currentColor"
-                    strokeWidth="1.5"
-                  />
-                  <path
-                    d="M8 10V7a4 4 0 0 1 8 0v3"
-                    stroke="currentColor"
-                    strokeWidth="1.5"
-                  />
-                </svg>
-              </div>
-
-              <span className="text-[10px] text-zinc-500 sm:text-[11px]">
-                Secure verification
-              </span>
+            <div>
+              <span className="verify-point-icon">✓</span>
+              Your memories stay yours
             </div>
-
-            <div className="flex items-center gap-1.5 text-[10px] text-emerald-300/80 sm:text-[11px]">
-              <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
-              Protected by TraceMind
+            <div>
+              <span className="verify-point-icon">✓</span>
+              Find what matters, faster
             </div>
           </div>
         </div>
 
-        {/* Footer branding */}
-        <div className="mt-7 text-center">
-          <p className="text-[11px] tracking-[0.5px] text-zinc-500">
-            Your thoughts. Your discoveries. Never lost.
-          </p>
-
-          <p className="mt-2.5 text-[10px] text-zinc-700">
-            © {new Date().getFullYear()} TraceMind. All rights reserved.
-          </p>
+        <div className="verify-visual-footer">
+          Your thoughts. Your discoveries. Never lost.
         </div>
       </section>
 
-      {/* Animations */}
+      {/* RIGHT SIDE — MATCHES LOGIN CARD */}
+      <section className="auth-card verify-card-section">
+        <div className="auth-form verify-form">
+          <div className="verify-mobile-logo">
+            <Logo />
+          </div>
+
+          <div
+            className={`verify-status-icon ${
+              hasError ? "verify-status-error" : "verify-status-success"
+            }`}
+            aria-hidden="true"
+          >
+            {hasError ? (
+              <svg viewBox="0 0 24 24" fill="none">
+                <circle
+                  cx="12"
+                  cy="12"
+                  r="9"
+                  stroke="currentColor"
+                  strokeWidth="1.7"
+                />
+                <path
+                  d="m9 9 6 6m0-6-6 6"
+                  stroke="currentColor"
+                  strokeWidth="1.7"
+                  strokeLinecap="round"
+                />
+              </svg>
+            ) : (
+              <svg viewBox="0 0 24 24" fill="none">
+                <rect
+                  x="3"
+                  y="5"
+                  width="18"
+                  height="14"
+                  rx="3"
+                  stroke="currentColor"
+                  strokeWidth="1.6"
+                />
+                <path
+                  d="m4 7 8 6 8-6"
+                  stroke="currentColor"
+                  strokeWidth="1.6"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            )}
+          </div>
+
+          <span
+            className={`verify-status-label ${
+              hasError ? "verify-label-error" : ""
+            }`}
+          >
+            <span className="verify-status-dot" />
+            {hasError
+              ? "Verification issue"
+              : verified === "true"
+                ? "Email verified"
+                : "Email verification"}
+          </span>
+
+          <h1 className="verify-heading">
+            {hasError ? (
+              <>
+                Let's get this
+                <br />
+                <span>sorted out.</span>
+              </>
+            ) : verified === "true" ? (
+              <>
+                You're all
+                <br />
+                <span>set!</span>
+              </>
+            ) : (
+              <>
+                Check your
+                <br />
+                <span>inbox.</span>
+              </>
+            )}
+          </h1>
+
+          <p className="muted verify-description">
+            {hasError
+              ? errorMessage
+              : verified === "true"
+                ? "Your email has been verified successfully. You can now sign in to your TraceMind account."
+                : "You're almost ready to experience a smarter way to remember. Verify your email address to finish setting up your TraceMind account."}
+          </p>
+
+          {!hasError && verified !== "true" && (
+            <div className="verify-instructions">
+              <div className="verify-instructions-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none">
+                  <circle
+                    cx="12"
+                    cy="12"
+                    r="9"
+                    stroke="currentColor"
+                    strokeWidth="1.6"
+                  />
+                  <path
+                    d="M12 11v5m0-8h.01"
+                    stroke="currentColor"
+                    strokeWidth="1.8"
+                    strokeLinecap="round"
+                  />
+                </svg>
+              </div>
+
+              <div>
+                <h2>What happens next?</h2>
+                <p>
+                  Open the email from TraceMind and click the verification
+                  button. Once verified, return here to sign in securely.
+                </p>
+              </div>
+            </div>
+          )}
+
+          {!hasError && verified !== "true" && (
+            <div className="verify-spam-note">
+              <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path
+                  d="m5 12 4 4L19 6"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+              Remember to check your spam or junk folder.
+            </div>
+          )}
+
+          <Link
+            href={hasError ? "/signup" : "/login"}
+            className="primary-btn verify-primary-btn"
+          >
+            <span>
+              {hasError
+                ? "Back to sign up"
+                : verified === "true"
+                  ? "Continue to login"
+                  : "Continue to login"}
+            </span>
+
+            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path
+                d="M5 12h14m-6-6 6 6-6 6"
+                stroke="currentColor"
+                strokeWidth="1.8"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+          </Link>
+
+          <div className="verify-security">
+            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path
+                d="M12 22s8-4 8-11V5l-8-3-8 3v6c0 7 8 11 8 11Z"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                strokeLinejoin="round"
+              />
+              <path
+                d="m9 12 2 2 4-4"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+
+            <span>Your account security comes first.</span>
+          </div>
+
+          <div className="verify-bottom-brand">
+            <span className="verify-security-dot" />
+            Secure verification · Protected by TraceMind
+          </div>
+        </div>
+      </section>
+
       <style jsx global>{`
-        @keyframes fadeInUp {
+        .verify-auth-page {
+          min-height: 100vh;
+          animation: verifyPageEnter 0.55s ease-out both;
+        }
+
+        .verify-visual {
+          position: relative;
+          overflow: hidden;
+        }
+
+        .verify-visual::after {
+          content: "";
+          position: absolute;
+          width: 320px;
+          height: 320px;
+          right: -130px;
+          bottom: -100px;
+          border-radius: 50%;
+          background: radial-gradient(
+            circle,
+            rgba(124, 58, 237, 0.14),
+            transparent 70%
+          );
+          pointer-events: none;
+        }
+
+        .verify-visual-icon {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          width: 82px;
+          height: 82px;
+          margin-bottom: 28px;
+          border-radius: 24px;
+          color: #7c3aed;
+          background: rgba(124, 58, 237, 0.08);
+          border: 1px solid rgba(124, 58, 237, 0.17);
+          box-shadow: 0 15px 40px rgba(91, 33, 182, 0.08);
+          animation: verifyFloat 4s ease-in-out infinite;
+        }
+
+        .verify-visual-icon svg {
+          width: 38px;
+          height: 38px;
+          flex-shrink: 0;
+        }
+
+        .verify-eyebrow {
+          display: inline-block;
+          margin-bottom: 16px;
+          color: #7c3aed;
+          font-size: 11px;
+          font-weight: 700;
+          letter-spacing: 2.5px;
+        }
+
+        .verify-highlight {
+          color: #7c3aed;
+        }
+
+        .verify-points {
+          margin-top: 28px;
+        }
+
+        .verify-points > div {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+        }
+
+        .verify-point-icon {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          width: 22px;
+          height: 22px;
+          flex-shrink: 0;
+          border-radius: 50%;
+          color: #6d28d9;
+          background: rgba(124, 58, 237, 0.09);
+          font-size: 12px;
+          font-weight: 700;
+        }
+
+        .verify-visual-footer {
+          position: relative;
+          z-index: 1;
+          margin-top: 40px;
+          color: #64748b;
+          font-size: 11px;
+          letter-spacing: 0.4px;
+        }
+
+        .verify-card-section {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+        }
+
+        .verify-form {
+          width: 100%;
+          max-width: 430px;
+          animation: verifyCardEnter 0.65s ease-out both;
+        }
+
+        .verify-mobile-logo {
+          display: none;
+          margin-bottom: 28px;
+        }
+
+        .verify-status-icon {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          width: 64px;
+          height: 64px;
+          margin-bottom: 22px;
+          border-radius: 20px;
+          animation: verifyFloat 4.5s ease-in-out infinite;
+        }
+
+        .verify-status-icon svg {
+          width: 31px;
+          height: 31px;
+          flex-shrink: 0;
+        }
+
+        .verify-status-success {
+          color: #7c3aed;
+          background: linear-gradient(
+            135deg,
+            rgba(139, 92, 246, 0.14),
+            rgba(124, 58, 237, 0.05)
+          );
+          border: 1px solid rgba(124, 58, 237, 0.18);
+          box-shadow: 0 10px 35px rgba(124, 58, 237, 0.08);
+        }
+
+        .verify-status-error {
+          color: #e11d48;
+          background: rgba(225, 29, 72, 0.07);
+          border: 1px solid rgba(225, 29, 72, 0.16);
+        }
+
+        .verify-status-label {
+          display: inline-flex;
+          align-items: center;
+          gap: 9px;
+          padding: 7px 12px;
+          margin-bottom: 18px;
+          border: 1px solid rgba(124, 58, 237, 0.15);
+          border-radius: 999px;
+          background: rgba(124, 58, 237, 0.055);
+          color: #6d28d9;
+          font-size: 10px;
+          font-weight: 700;
+          letter-spacing: 1.2px;
+          text-transform: uppercase;
+        }
+
+        .verify-label-error {
+          color: #e11d48;
+          border-color: rgba(225, 29, 72, 0.16);
+          background: rgba(225, 29, 72, 0.05);
+        }
+
+        .verify-status-dot {
+          width: 7px;
+          height: 7px;
+          border-radius: 50%;
+          background: currentColor;
+          box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.08);
+        }
+
+        .verify-heading {
+          margin: 0;
+          color: var(--foreground, #0f172a);
+          font-size: clamp(34px, 4vw, 42px);
+          font-weight: 750;
+          line-height: 1.12;
+          letter-spacing: -1.7px;
+        }
+
+        .verify-heading span {
+          color: #7c3aed;
+        }
+
+        .verify-description {
+          margin-top: 17px;
+          margin-bottom: 0;
+          max-width: 380px;
+          font-size: 13px;
+          line-height: 1.9;
+        }
+
+        .verify-instructions {
+          display: flex;
+          align-items: flex-start;
+          gap: 14px;
+          margin-top: 27px;
+          padding: 18px;
+          border: 1px solid rgba(124, 58, 237, 0.12);
+          border-radius: 16px;
+          background: linear-gradient(
+            135deg,
+            rgba(124, 58, 237, 0.045),
+            rgba(255, 255, 255, 0.7)
+          );
+        }
+
+        .verify-instructions-icon {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          width: 38px;
+          height: 38px;
+          flex-shrink: 0;
+          border: 1px solid rgba(124, 58, 237, 0.12);
+          border-radius: 12px;
+          background: rgba(124, 58, 237, 0.07);
+          color: #7c3aed;
+        }
+
+        .verify-instructions-icon svg {
+          width: 20px;
+          height: 20px;
+          flex-shrink: 0;
+        }
+
+        .verify-instructions h2 {
+          margin: 1px 0 7px;
+          color: var(--foreground, #0f172a);
+          font-size: 13px;
+          font-weight: 700;
+        }
+
+        .verify-instructions p {
+          margin: 0;
+          color: var(--muted, #64748b);
+          font-size: 12px;
+          line-height: 1.85;
+        }
+
+        .verify-spam-note {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          margin-top: 15px;
+          color: #64748b;
+          font-size: 11px;
+          line-height: 1.6;
+        }
+
+        .verify-spam-note svg {
+          width: 15px;
+          height: 15px;
+          flex-shrink: 0;
+          color: #059669;
+        }
+
+        .verify-primary-btn {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 10px;
+          width: 100%;
+          margin-top: 27px;
+          text-decoration: none;
+          transition:
+            transform 0.2s ease,
+            box-shadow 0.2s ease;
+        }
+
+        .verify-primary-btn:hover {
+          transform: translateY(-2px);
+          box-shadow: 0 12px 28px rgba(124, 58, 237, 0.18);
+        }
+
+        .verify-primary-btn svg {
+          width: 17px;
+          height: 17px;
+          flex-shrink: 0;
+          transition: transform 0.2s ease;
+        }
+
+        .verify-primary-btn:hover svg {
+          transform: translateX(3px);
+        }
+
+        .verify-security {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 8px;
+          margin-top: 21px;
+          color: #64748b;
+          font-size: 11px;
+        }
+
+        .verify-security svg {
+          width: 15px;
+          height: 15px;
+          flex-shrink: 0;
+          color: #7c3aed;
+        }
+
+        .verify-bottom-brand {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 8px;
+          margin-top: 28px;
+          padding-top: 19px;
+          border-top: 1px solid rgba(148, 163, 184, 0.17);
+          color: #64748b;
+          font-size: 10px;
+          letter-spacing: 0.2px;
+        }
+
+        .verify-security-dot {
+          width: 7px;
+          height: 7px;
+          flex-shrink: 0;
+          border-radius: 50%;
+          background: #10b981;
+          box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.09);
+        }
+
+        @keyframes verifyPageEnter {
           from {
             opacity: 0;
-            transform: translateY(20px);
+          }
+          to {
+            opacity: 1;
+          }
+        }
+
+        @keyframes verifyCardEnter {
+          from {
+            opacity: 0;
+            transform: translateY(12px);
           }
           to {
             opacity: 1;
@@ -464,34 +638,69 @@ function VerifyEmailContent() {
           }
         }
 
-        @keyframes float {
+        @keyframes verifyFloat {
           0%,
           100% {
             transform: translateY(0);
           }
           50% {
-            transform: translateY(-7px);
+            transform: translateY(-5px);
           }
         }
 
-        @keyframes ambient {
-          0%,
-          100% {
-            transform: translate3d(0, 0, 0) scale(1);
+        @media (max-width: 900px) {
+          .verify-auth-page {
+            min-height: 100vh;
           }
-          50% {
-            transform: translate3d(20px, -15px, 0) scale(1.08);
+
+          .verify-visual {
+            display: none !important;
+          }
+
+          .verify-card-section {
+            min-height: 100vh;
+            padding: 32px 24px;
+          }
+
+          .verify-form {
+            max-width: 460px;
+          }
+
+          .verify-mobile-logo {
+            display: block;
+          }
+        }
+
+        @media (max-width: 480px) {
+          .verify-card-section {
+            padding: 26px 20px;
+          }
+
+          .verify-heading {
+            font-size: 36px;
+          }
+
+          .verify-instructions {
+            gap: 11px;
+            padding: 15px;
+          }
+
+          .verify-bottom-brand {
+            font-size: 9px;
           }
         }
 
         @media (prefers-reduced-motion: reduce) {
-          *,
-          *::before,
-          *::after {
-            animation-duration: 0.01ms !important;
-            animation-iteration-count: 1 !important;
-            scroll-behavior: auto !important;
-            transition-duration: 0.01ms !important;
+          .verify-auth-page,
+          .verify-form,
+          .verify-visual-icon,
+          .verify-status-icon {
+            animation: none !important;
+          }
+
+          .verify-primary-btn,
+          .verify-primary-btn svg {
+            transition: none !important;
           }
         }
       `}</style>
@@ -503,11 +712,13 @@ export default function VerifyEmailPage() {
   return (
     <Suspense
       fallback={
-        <main className="flex min-h-screen items-center justify-center bg-[#080611] text-sm text-zinc-400">
-          <div className="flex flex-col items-center gap-4">
-            <div className="h-9 w-9 animate-spin rounded-full border-2 border-violet-400/20 border-t-violet-400" />
-            <span>Loading TraceMind...</span>
-          </div>
+        <main className="auth-page verify-auth-page">
+          <section className="auth-card verify-card-section">
+            <div className="auth-form">
+              <Logo />
+              <p className="muted">Loading TraceMind...</p>
+            </div>
+          </section>
         </main>
       }
     >

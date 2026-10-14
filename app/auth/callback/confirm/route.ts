@@ -3,46 +3,45 @@ import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
 
 export async function GET(request: Request) {
-  const requestUrl = new URL(request.url);
+  const url = new URL(request.url);
 
-  const tokenHash = requestUrl.searchParams.get("token_hash");
-  const type = requestUrl.searchParams.get("type");
+  const tokenHash = url.searchParams.get("token_hash");
+  const type = url.searchParams.get("type");
 
-  const cookieStore = await cookies();
+  const origin = url.origin;
 
-  const response = NextResponse.redirect(
-    new URL("/login?verified=true", requestUrl.origin)
-  );
-
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-
-  if (!supabaseUrl || !supabaseKey) {
+  // Only accept signup confirmation links.
+  if (!tokenHash || type !== "signup") {
     return NextResponse.redirect(
-      new URL("/login?error=supabase_not_configured", requestUrl.origin)
+      new URL("/verify-email?error=invalid_link", origin)
     );
   }
 
-  if (!tokenHash || type !== "signup") {
+  const cookieStore = await cookies();
+
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+  if (!supabaseUrl || !supabaseAnonKey) {
+    console.error("Supabase environment variables are missing.");
+
     return NextResponse.redirect(
-      new URL("/verify-email?error=invalid_link", requestUrl.origin)
+      new URL("/verify-email?error=verification_failed", origin)
     );
   }
 
   const supabase = createServerClient(
     supabaseUrl,
-    supabaseKey,
+    supabaseAnonKey,
     {
       cookies: {
         getAll() {
           return cookieStore.getAll();
         },
-
         setAll(cookiesToSet) {
-          for (const { name, value, options } of cookiesToSet) {
+          cookiesToSet.forEach(({ name, value, options }) => {
             cookieStore.set(name, value, options);
-            response.cookies.set(name, value, options);
-          }
+          });
         },
       },
     }
@@ -54,15 +53,14 @@ export async function GET(request: Request) {
   });
 
   if (error) {
-    console.error(
-      "[EMAIL CONFIRMATION] Verification failed:",
-      error.message
-    );
+    console.error("Email verification failed:", error.message);
 
     return NextResponse.redirect(
-      new URL("/verify-email?error=verification_failed", requestUrl.origin)
+      new URL("/verify-email?error=verification_failed", origin)
     );
   }
 
-  return response;
+  return NextResponse.redirect(
+    new URL("/verify-email?verified=true", origin)
+  );
 }

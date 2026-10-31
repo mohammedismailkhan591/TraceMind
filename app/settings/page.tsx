@@ -1,6 +1,12 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ChangeEvent,
+} from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "../../lib/supabase";
 
@@ -17,6 +23,9 @@ export default function SettingsPage() {
 
   const [fullName, setFullName] = useState("");
   const [avatarUrl, setAvatarUrl] = useState("");
+  const [selectedPhoto, setSelectedPhoto] = useState<File | null>(null);
+  const [photoPreviewUrl, setPhotoPreviewUrl] = useState("");
+  const photoInputRef = useRef<HTMLInputElement>(null);
 
   const [emailNotifications, setEmailNotifications] = useState(true);
   const [deadlineReminders, setDeadlineReminders] = useState(true);
@@ -87,32 +96,108 @@ export default function SettingsPage() {
 
     setLoading(false);
   }
+  function handlePhotoChange(event: ChangeEvent<HTMLInputElement>) {
+  const file = event.target.files?.[0];
 
-  async function saveProfile() {
-    if (!userId) return;
+  if (!file) return;
 
-    setSaving(true);
-    setMessage("");
-    setError("");
+  if (!["image/jpeg", "image/png", "image/webp"].includes(file.type)) {
+    setError("Choose a JPG, PNG, or WebP image.");
+    event.target.value = "";
+    return;
+  }
 
-    const { error } = await supabase
+  if (file.size > 5 * 1024 * 1024) {
+    setError("Your profile photo must be smaller than 5 MB.");
+    event.target.value = "";
+    return;
+  }
+
+  setError("");
+  setMessage("");
+  setSelectedPhoto(file);
+  setPhotoPreviewUrl(URL.createObjectURL(file));
+}
+
+async function saveProfile() {
+  if (!userId) return;
+
+  setSaving(true);
+  setMessage("");
+  setError("");
+
+  try {
+    let nextAvatarUrl: string | null = avatarUrl.trim() || null;
+
+    if (selectedPhoto) {
+      const extensionByType: Record<string, string> = {
+        "image/jpeg": "jpg",
+        "image/png": "png",
+        "image/webp": "webp",
+      };
+
+      const extension = extensionByType[selectedPhoto.type];
+
+      if (!extension) {
+        setError("Choose a JPG, PNG, or WebP image.");
+        return;
+      }
+
+      const storagePath = `${userId}/${Date.now()}.${extension}`;
+
+      const { error: uploadError } = await supabase.storage
+        .from("profile-avatars")
+        .upload(storagePath, selectedPhoto, {
+          cacheControl: "3600",
+          upsert: false,
+          contentType: selectedPhoto.type,
+        });
+
+      if (uploadError) {
+        throw uploadError;
+      }
+
+      const { data } = supabase.storage
+        .from("profile-avatars")
+        .getPublicUrl(storagePath);
+
+      nextAvatarUrl = data.publicUrl;
+    }
+
+    const { error: profileError } = await supabase
       .from("profiles")
       .upsert({
         id: userId,
         full_name: fullName.trim(),
-        avatar_url: avatarUrl.trim() || null,
+        avatar_url: nextAvatarUrl,
       });
 
-    if (error) {
-      console.error(error);
-      setError(error.message);
-      setSaving(false);
-      return;
+    if (profileError) {
+      throw profileError;
+    }
+
+    setAvatarUrl(nextAvatarUrl || "");
+    setSelectedPhoto(null);
+    setPhotoPreviewUrl("");
+
+    if (photoInputRef.current) {
+      photoInputRef.current.value = "";
     }
 
     setMessage("Profile updated successfully.");
+  } catch (err) {
+    console.error("Could not save profile:", err);
+
+    setError(
+      err instanceof Error
+        ? err.message
+        : "Could not save your profile. Please try again."
+    );
+  } finally {
     setSaving(false);
   }
+}
+
 
   async function saveNotificationPreferences() {
     if (!userId) return;
@@ -301,9 +386,12 @@ export default function SettingsPage() {
 
             <div className="profile-preview">
               <div className="avatar">
-                {avatarUrl ? (
-                  <img src={avatarUrl} alt="Profile" />
-                ) : (
+                  {(photoPreviewUrl || avatarUrl) ? (
+                   <img
+                    src={photoPreviewUrl || avatarUrl}
+                         alt="Profile"
+                        />   
+                                   ) : (
                   <span>
                     {fullName
                       ? fullName.charAt(0).toUpperCase()
@@ -340,15 +428,75 @@ export default function SettingsPage() {
             </div>
 
             <div className="form-group">
-              <label>Profile image URL</label>
+  <label>Profile photo</label>
 
-              <input
-                type="url"
-                value={avatarUrl}
-                onChange={(e) => setAvatarUrl(e.target.value)}
-                placeholder="https://example.com/profile.jpg"
-              />
-            </div>
+  <input
+    ref={photoInputRef}
+    type="file"
+    accept="image/png,image/jpeg,image/webp"
+    onChange={handlePhotoChange}
+    style={{ display: "none" }}
+  />
+
+  <div
+    style={{
+      display: "flex",
+      alignItems: "center",
+      gap: "16px",
+      flexWrap: "wrap",
+    }}
+  >
+    <div className="avatar">
+      {photoPreviewUrl || avatarUrl ? (
+        <img
+          src={photoPreviewUrl || avatarUrl}
+          alt="Profile preview"
+        />
+      ) : (
+        <span>
+          {fullName
+            ? fullName.charAt(0).toUpperCase()
+            : email.charAt(0).toUpperCase()}
+        </span>
+      )}
+    </div>
+
+    <div
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        gap: "8px",
+      }}
+    >
+      <button
+        type="button"
+        className="primary-button"
+        onClick={() => photoInputRef.current?.click()}
+      >
+        Choose photo
+      </button>
+
+      {(photoPreviewUrl || avatarUrl) && (
+        <button
+          type="button"
+          onClick={() => {
+            setSelectedPhoto(null);
+            setPhotoPreviewUrl("");
+            setAvatarUrl("");
+
+            if (photoInputRef.current) {
+              photoInputRef.current.value = "";
+            }
+          }}
+        >
+          Remove photo
+        </button>
+      )}
+    </div>
+  </div>
+
+  <small>JPG, PNG, or WebP. Maximum file size: 5 MB.</small>
+</div>
 
             <button
               className="primary-button"
@@ -1037,7 +1185,6 @@ export default function SettingsPage() {
     </>
   );
 }
-
 function Toggle({
   checked,
   onChange,
@@ -1048,12 +1195,43 @@ function Toggle({
   return (
     <button
       type="button"
-      className={`toggle ${checked ? "on" : "off"}`}
-      onClick={() => onChange(!checked)}
+      role="switch"
+      aria-checked={checked}
       aria-label={checked ? "Disable setting" : "Enable setting"}
-      aria-pressed={checked}
+      onClick={() => onChange(!checked)}
+      style={{
+        position: "relative",
+        display: "inline-flex",
+        alignItems: "center",
+        flexShrink: 0,
+        width: "48px",
+        minWidth: "48px",
+        height: "28px",
+        padding: "3px",
+        border: "2px solid",
+        borderColor: checked ? "#2563eb" : "#94a3b8",
+        borderRadius: "999px",
+        backgroundColor: checked ? "#2563eb" : "#cbd5e1",
+        cursor: "pointer",
+        boxSizing: "border-box",
+        visibility: "visible",
+        opacity: 1,
+      }}
     >
-      <span className="toggle-dot" />
+      <span
+        style={{
+          display: "block",
+          position: "absolute",
+          top: "3px",
+          left: checked ? "23px" : "3px",
+          width: "18px",
+          height: "18px",
+          borderRadius: "50%",
+          backgroundColor: "#ffffff",
+          boxShadow: "0 1px 4px rgba(0,0,0,0.2)",
+          transition: "left 0.2s ease",
+        }}
+      />
     </button>
   );
 }

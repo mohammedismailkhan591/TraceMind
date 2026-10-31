@@ -910,6 +910,61 @@ export default function CapturePage() {
           );
         }
       }
+            // Automatically save deadline reminders to Supabase.
+      if (deadline) {
+        const deadlineTime = new Date(deadline).getTime();
+        const now = Date.now();
+
+        if (!Number.isFinite(deadlineTime)) {
+          throw new Error("Please enter a valid deadline.");
+        }
+
+        const reminderWindows = [
+          {
+            kind: "24_hours",
+            label: "24 hours before",
+            milliseconds: 24 * 60 * 60 * 1000,
+          },
+          {
+            kind: "7_hours",
+            label: "7 hours before",
+            milliseconds: 7 * 60 * 60 * 1000,
+          },
+          {
+            kind: "1_hour",
+            label: "1 hour before",
+            milliseconds: 60 * 60 * 1000,
+          },
+        ];
+
+        const remindersToSave = reminderWindows
+          .map((window) => ({
+            user_id: user.id,
+            memory_id: memory.id,
+            title: `${title.trim()} · ${window.label}`,
+            reminder_at: new Date(
+              deadlineTime - window.milliseconds
+            ).toISOString(),
+            completed: false,
+            reminder_kind: window.kind,
+          }))
+          .filter(
+            (reminder) =>
+              new Date(reminder.reminder_at).getTime() > now
+          );
+
+        if (remindersToSave.length > 0) {
+          const { error: reminderError } = await supabase
+            .from("reminders")
+            .insert(remindersToSave);
+
+          if (reminderError) {
+            throw new Error(
+              `Memory could not finish saving its reminders: ${reminderError.message}`
+            );
+          }
+        }
+      }
 
       setStatus({
         type: "success",

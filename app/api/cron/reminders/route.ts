@@ -245,7 +245,38 @@ async function sendReminderEmail(params: {
 
   return responseBody;
 }
+async function createInAppReminderNotification(
+  supabase: any,
+  reminder: Reminder
+): Promise<void> {
+  const message =
+    reminder.title?.trim() || "Your TraceMind reminder";
 
+  const notification = {
+    user_id: reminder.user_id,
+    reminder_id: reminder.id,
+    type: "deadline",
+    title: "Reminder",
+    message,
+    link: "/reminders",
+    is_read: false,
+  };
+
+  const { error } = await supabase
+    .from("notifications")
+    // Supabase's current TypeScript schema may infer this
+    // table's insert type incorrectly as never[].
+    .upsert(notification as never, {
+      onConflict: "reminder_id",
+      ignoreDuplicates: true,
+    });
+
+  if (error) {
+    throw new Error(
+      `Could not create in-app notification: ${error.message}`
+    );
+  }
+}
 export async function GET(request: Request) {
   // --------------------------------------------------
   // 1. Authenticate the Cron request
@@ -398,6 +429,9 @@ export async function GET(request: Request) {
         // Another invocation has already claimed or processed it.
         continue;
       }
+      // Create the in-app notification.
+// The unique reminder_id prevents duplicate notifications.
+await createInAppReminderNotification(supabase, reminder);
 
       // ------------------------------------------------
       // 6. Read notification preferences

@@ -338,20 +338,16 @@ export default function RemindersPage() {
      RUN SYNC ONCE
   ========================= */
 
-  useEffect(() => {
-    if (!userId || loading) {
-      return;
-    }
 
-    if (memories.length === 0) {
-      return;
-    }
 
-    syncReminders(userId, memories);
+useEffect(() => {
+  if (!userId || loading || memories.length === 0) {
+    return;
+  }
 
-    // Intentionally run once after initial data load.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [userId, loading]);
+  void syncReminders(userId, memories);
+}, [userId, loading, memories, syncReminders]);
+
 
   /* =========================
      MEMORY LOOKUP

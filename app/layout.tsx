@@ -9,8 +9,8 @@ export default function RootLayout({
   children: ReactNode;
 }) {
   return (
-    <html lang="en">
-      <body>
+<html lang="en" data-scroll-behavior="smooth">
+        <body>
         <WelcomeSplash>
           <AppShell>{children}</AppShell>
         </WelcomeSplash>

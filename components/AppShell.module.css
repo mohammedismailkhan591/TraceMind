@@ -431,3 +431,520 @@
 @media (prefers-reduced-motion: reduce) {
   .navItem, .loginButton, .signupButton, .profileLink { transition: none; }
 }
+/* =========================================
+   TraceMind Notification System
+   ========================================= */
+
+.desktopNotificationArea {
+  position: fixed;
+  top: 16px;
+  right: 22px;
+  z-index: 50;
+}
+
+.notificationWrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  overflow: visible;
+}
+
+.notificationBell {
+  position: relative;
+  overflow: visible;
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  padding: 0;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.92);
+  color: #64748b;
+  box-shadow: 0 5px 16px rgba(15, 23, 42, 0.055);
+  cursor: pointer;
+  transition:
+    background 0.18s ease,
+    border-color 0.18s ease,
+    color 0.18s ease,
+    transform 0.18s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.notificationBell:hover,
+.notificationBellActive {
+  background: #fff;
+  border-color: rgba(91, 92, 230, 0.3);
+  color: #4f46e5;
+  transform: translateY(-1px);
+}
+
+.notificationBell:focus-visible {
+  outline: 3px solid rgba(91, 92, 230, 0.25);
+  outline-offset: 3px;
+}
+
+.notificationBell svg {
+  width: 20px;
+  height: 20px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  pointer-events: none;
+}
+
+.notificationBadge {
+  position: absolute;
+  top: -5px;
+  right: -5px;
+  z-index: 2;
+  pointer-events: none;
+  display: grid;
+  place-items: center;
+  min-width: 19px;
+  height: 19px;
+  padding: 0 5px;
+  border: 2px solid #fff;
+  border-radius: 999px;
+  background: #ef4444;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 1;
+  box-shadow: 0 2px 6px rgba(239, 68, 68, 0.25);
+  user-select: none;
+}
+
+.notificationPanel {
+  position: absolute;
+  top: calc(100% + 12px);
+  right: 0;
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  width: min(390px, calc(100vw - 28px));
+  max-height: min(560px, calc(100dvh - 100px));
+  overflow: hidden;
+  border: 1px solid rgba(226, 232, 240, 0.95);
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.98);
+  box-shadow:
+    0 24px 65px rgba(15, 23, 42, 0.15),
+    0 4px 12px rgba(15, 23, 42, 0.04);
+  backdrop-filter: blur(22px);
+  -webkit-backdrop-filter: blur(22px);
+  animation: notificationPanelEnter 0.18s ease-out;
+}
+
+@keyframes notificationPanelEnter {
+  from {
+    opacity: 0;
+    transform: translateY(-5px) scale(0.99);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.notificationHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 19px 18px 15px;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.notificationHeader h2 {
+  margin: 0;
+  color: #0f172a;
+  font-size: 16px;
+  font-weight: 800;
+  letter-spacing: -0.035em;
+}
+
+.notificationHeader p {
+  margin: 5px 0 0;
+  color: #94a3b8;
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.notificationClose {
+  display: grid;
+  place-items: center;
+  width: 31px;
+  height: 31px;
+  padding: 0;
+  border: 0;
+  border-radius: 9px;
+  background: #f8fafc;
+  color: #64748b;
+  cursor: pointer;
+}
+
+.notificationClose:hover {
+  background: #eef2ff;
+  color: #4338ca;
+}
+
+.notificationClose svg {
+  width: 17px;
+  height: 17px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+}
+
+.notificationToolbar {
+  display: flex;
+  justify-content: flex-end;
+  padding: 8px 16px;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.notificationToolbar button {
+  padding: 5px 0;
+  border: 0;
+  background: transparent;
+  color: #4f46e5;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.notificationToolbar button:hover {
+  color: #3730a3;
+}
+
+.notificationList {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.notificationItem {
+  display: flex;
+  align-items: flex-start;
+  width: 100%;
+  gap: 12px;
+  padding: 15px 16px;
+  border: 0;
+  border-bottom: 1px solid #f1f5f9;
+  background: #fff;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.notificationItem:last-child {
+  border-bottom: 0;
+}
+
+.notificationItem:hover {
+  background: #f8faff;
+}
+
+.notificationUnread {
+  background: #f8f9ff;
+}
+
+.notificationUnread:hover {
+  background: #f0f2ff;
+}
+
+.notificationTypeIcon {
+  display: grid;
+  flex: 0 0 36px;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 12px;
+  background: #eef2ff;
+  color: #4f46e5;
+}
+
+.notificationTypeIcon svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.type_info {
+  background: #eef2ff;
+  color: #4f46e5;
+}
+
+.type_success {
+  background: #dcfce7;
+  color: #15803d;
+}
+
+.type_warning {
+  background: #fef3c7;
+  color: #b45309;
+}
+
+.type_deadline {
+  background: #fee2e2;
+  color: #dc2626;
+}
+
+.notificationCopy {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  gap: 5px;
+}
+
+.notificationItemTitle {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: #1e293b;
+  font-size: 12px;
+  font-weight: 750;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.notificationMessage {
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 450;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.notificationTime {
+  margin-top: 2px;
+  color: #a0aabc;
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.notificationUnreadDot {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #6366f1;
+}
+
+.notificationEmpty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 34px 24px;
+  text-align: center;
+}
+
+.notificationEmptyIcon {
+  display: grid;
+  place-items: center;
+  width: 46px;
+  height: 46px;
+  margin-bottom: 13px;
+  border-radius: 15px;
+  background: #eef2ff;
+  color: #4f46e5;
+}
+
+.notificationEmptyIcon svg {
+  width: 22px;
+  height: 22px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.notificationEmpty > svg {
+  width: 24px;
+  height: 24px;
+  margin-bottom: 13px;
+  fill: none;
+  stroke: #818cf8;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.notificationEmpty strong {
+  color: #334155;
+  font-size: 13px;
+  font-weight: 750;
+}
+
+.notificationEmpty p {
+  max-width: 245px;
+  margin: 7px 0 0;
+  color: #94a3b8;
+  font-size: 11px;
+  line-height: 1.7;
+}
+
+.notificationAction {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 36px;
+  margin-top: 16px;
+  padding: 0 17px;
+  border-radius: 11px;
+  background: #4f46e5;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.notificationAction:hover {
+  background: #4338ca;
+}
+
+.notificationStatus {
+  padding: 28px 18px;
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.7;
+  text-align: center;
+}
+
+.notificationStatus p {
+  margin: 0 0 9px;
+}
+
+.notificationStatus button {
+  border: 0;
+  background: transparent;
+  color: #4f46e5;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.notificationFooter {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 48px;
+  padding: 10px 14px;
+  border-top: 1px solid #f1f5f9;
+  background: #fcfcff;
+}
+
+.notificationFooter button,
+.notificationFooter > span {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  border: 0;
+  background: transparent;
+  color: #64748b;
+  font-size: 10px;
+  font-weight: 650;
+  line-height: 1.5;
+  text-align: center;
+}
+
+.notificationFooter button {
+  color: #4f46e5;
+  cursor: pointer;
+}
+
+.notificationFooter button:hover {
+  color: #3730a3;
+}
+
+.notificationFooter svg {
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.mobileHeaderActions {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 9px;
+}
+
+.mobileHeaderActions .notificationBell {
+  position: relative;
+  overflow: visible;
+  width: 38px;
+  height: 38px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.9);
+  box-shadow: none;
+}
+
+.mobileHeaderActions .notificationBell svg {
+  width: 19px;
+  height: 19px;
+  pointer-events: none;
+}
+
+.mobileHeaderActions .notificationPanel {
+  position: fixed;
+  top: calc(62px + env(safe-area-inset-top));
+  right: 12px;
+  left: 12px;
+  z-index: 100;
+  width: auto;
+  max-height: calc(100dvh - 150px - env(safe-area-inset-top));
+}
+
+@media (max-width: 760px) {
+  .desktopNotificationArea {
+    display: none;
+  }
+
+  .mobileHeaderActions {
+    gap: 8px;
+  }
+
+  .mobileHeaderActions .notificationBadge {
+    top: -4px;
+    right: -4px;
+    z-index: 2;
+    pointer-events: none;
+  }
+}
+
+@media (max-width: 360px) {
+  .mobileHeaderActions {
+    gap: 6px;
+  }
+
+  .mobileHeaderActions .notificationBell {
+    width: 35px;
+    height: 35px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .notificationBell,
+  .notificationPanel,
+  .notificationItem {
+    animation: none;
+    transition: none;
+  }
+}

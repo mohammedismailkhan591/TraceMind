@@ -85,11 +85,14 @@ export default function Login() {
 
     const supabase = createClient();
     const { error } = await supabase.auth.signInWithOAuth({
-      provider: "google",
-      options: {
-        redirectTo: getAuthRedirectUrl(),
-      },
-    });
+  provider: "google",
+  options: {
+    redirectTo: getAuthRedirectUrl(),
+    queryParams: {
+      prompt: "select_account",
+    },
+  },
+});
 
     if (error) {
       setLoading(false);

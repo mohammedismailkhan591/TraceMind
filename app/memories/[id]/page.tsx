@@ -1,4 +1,5 @@
 import Link from "next/link";
+import MemoryAttachments from "../../../components/MemoryAttachments";
 import { isSupabaseConfigured } from "../../../lib/supabase";
 import { createServerSupabaseClient } from "../../../lib/supabase/server";
 
@@ -18,6 +19,15 @@ function sourceLabel(value: string | null | undefined) {
   return value.replace(/[_-]/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
+function attachmentKind(fileName: string, mimeType: string | null): "pdf" | "image" | "audio" | "file" {
+  const extension = fileName.split(".").pop()?.toLowerCase() || "";
+  const mime = (mimeType || "").toLowerCase();
+  if (mime === "application/pdf" || extension === "pdf") return "pdf";
+  if (["image/png", "image/jpeg", "image/webp"].includes(mime) || ["png", "jpg", "jpeg", "webp"].includes(extension)) return "image";
+  if (mime.startsWith("audio/") || ["mp3", "wav", "m4a", "aac", "ogg", "oga", "webm", "flac"].includes(extension)) return "audio";
+  return "file";
+}
+
 export default async function MemoryDetail({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
 
@@ -34,6 +44,39 @@ export default async function MemoryDetail({ params }: { params: Promise<{ id: s
 
   const { data: memory, error } = await supabase.from("memories").select("id,title,summary,content,category,source_type,source_url,deadline,is_favorite,created_at,updated_at").eq("id", id).eq("user_id", user.id).single();
   if (error || !memory) return <div className="memory-detail-page"><Link href="/memories" className="tm-back">← All memories</Link><div className="detail-empty"><div className="empty-icon">?</div><h1>Memory not found</h1><p>This item may have been removed, or you may not have access to it.</p><Link href="/memories" className="tm-primary">Back to memories</Link></div></div>;
+
+  const { data: assets, error: assetsError } = await supabase
+    .from("memory_assets")
+    .select("id,storage_path,file_name,mime_type,file_size,created_at")
+    .eq("memory_id", memory.id)
+    .eq("user_id", user.id)
+    .order("created_at", { ascending: true });
+
+  const attachments = await Promise.all((assets || []).map(async (asset) => {
+    const fileName = asset.file_name || "Saved attachment";
+    const [viewResult, downloadResult] = await Promise.all([
+      supabase.storage.from("memory-assets").createSignedUrl(asset.storage_path, 300),
+      supabase.storage.from("memory-assets").createSignedUrl(asset.storage_path, 300, { download: fileName }),
+    ]);
+    return {
+      id: asset.id,
+      fileName,
+      mimeType: asset.mime_type,
+      fileSize: typeof asset.file_size === "number" ? asset.file_size : Number(asset.file_size) || null,
+      kind: attachmentKind(fileName, asset.mime_type),
+      viewUrl: viewResult.error ? null : viewResult.data.signedUrl,
+      downloadUrl: downloadResult.error ? null : downloadResult.data.signedUrl,
+    };
+  }));
+  const websiteUrl = (() => {
+    if (!memory.source_url) return null;
+    try {
+      const url = new URL(memory.source_url);
+      return url.protocol === "http:" || url.protocol === "https:" ? url.toString() : null;
+    } catch {
+      return null;
+    }
+  })();
 
   const timeline = [
     { key: "created", title: "Memory captured", detail: `Saved to TraceMind as ${sourceLabel(memory.source_type).toLowerCase()}.`, date: memory.created_at, icon: "＋", tone: "blue" },
@@ -54,8 +97,10 @@ export default async function MemoryDetail({ params }: { params: Promise<{ id: s
       <main className="detail-main">
         <section className="detail-panel"><div className="section-heading"><div><span className="eyebrow">MEMORY CONTEXT</span><h2>Everything in this memory</h2></div><span className="section-count">01</span></div>
           {memory.summary && <div className="summary-block"><span className="mini-label">QUICK SUMMARY</span><p>{memory.summary}</p></div>}
-          <div className="content-block"><span className="mini-label">CAPTURED INFORMATION</span>{memory.content ? <p className="memory-content">{memory.content}</p> : <div className="missing-content"><span>✦</span><div><strong>No text content stored yet</strong><p>This memory may contain only a source reference or attachment. You can still see its capture details below.</p></div></div>}</div>
+          <div className="content-block"><span className="mini-label">ORIGINAL SAVED CONTENT</span>{memory.content ? <p className="memory-content">{memory.content}</p> : <div className="missing-content"><span>✦</span><div><strong>No original text content</strong><p>This memory may contain a summary, source reference, or file attachment instead.</p></div></div>}</div>
         </section>
+
+        <MemoryAttachments attachments={attachments} unavailable={Boolean(assetsError)} />
 
         <section className="detail-panel"><div className="section-heading"><div><span className="eyebrow">NAVIGATION TIMELINE</span><h2>How this memory came together</h2><p className="section-subtitle">A chronological trail of the dates and source details currently recorded for this memory.</p></div><span className="timeline-count">{timeline.length} {timeline.length === 1 ? "event" : "events"}</span></div>
           <div className="memory-timeline">{timeline.map((event) => <article className="timeline-event" key={event.key}><div className={`timeline-marker ${event.tone}`}>{event.icon}</div><div className="timeline-event-body"><div className="event-heading"><h3>{event.title}</h3><time>{dateTime(event.date)}</time></div><p>{event.detail}</p></div></article>)}</div>
@@ -65,7 +110,7 @@ export default async function MemoryDetail({ params }: { params: Promise<{ id: s
 
       <aside className="detail-aside">
         <section className="detail-panel"><div className="aside-title"><span className="aside-icon">✧</span><div><span className="eyebrow">AT A GLANCE</span><h2>Memory facts</h2></div></div><dl className="fact-list"><div><dt>Category</dt><dd>{memory.category || "Uncategorized"}</dd></div><div><dt>Captured via</dt><dd>{sourceLabel(memory.source_type)}</dd></div><div><dt>First saved</dt><dd>{dateTime(memory.created_at)}</dd></div><div><dt>Last updated</dt><dd>{dateTime(memory.updated_at || memory.created_at)}</dd></div><div><dt>Deadline</dt><dd className={memory.deadline ? "deadline-value" : ""}>{dateOnly(memory.deadline)}</dd></div><div><dt>Importance</dt><dd>{memory.is_favorite ? "Marked important" : "Standard memory"}</dd></div></dl></section>
-        <section className="detail-panel source-panel"><div className="aside-title"><span className="aside-icon violet">↗</span><div><span className="eyebrow">ORIGIN</span><h2>Where it came from</h2></div></div>{memory.source_url ? <><p className="source-url">{memory.source_url}</p><a className="source-open" href={memory.source_url} target="_blank" rel="noreferrer">Open original source <span>↗</span></a></> : <div className="no-source"><strong>No external link</strong><p>This memory was saved without a website URL.</p></div>}</section>
+        <section className="detail-panel source-panel"><div className="aside-title"><span className="aside-icon violet">↗</span><div><span className="eyebrow">ORIGIN</span><h2>Where it came from</h2></div></div>{memory.source_url ? <><p className="source-url">{memory.source_url}</p>{websiteUrl ? <a className="source-open" href={websiteUrl} target="_blank" rel="noopener noreferrer">Open Website <span>↗</span></a> : <div className="no-source"><strong>Website unavailable</strong><p>This saved URL is not a valid web address.</p></div>}</> : <div className="no-source"><strong>No external link</strong><p>This memory was saved without a website URL.</p></div>}</section>
         {memory.deadline && <section className="deadline-callout"><div className="deadline-symbol">◷</div><div><span className="eyebrow">IMPORTANT DATE</span><h3>Deadline</h3><p>{dateOnly(memory.deadline)}</p><Link href="/reminders">Review reminders →</Link></div></section>}
         <Link href="/capture" className="add-context"><span>＋</span><div><strong>Capture more context</strong><p>Save another note, file, or link to TraceMind.</p></div><b>→</b></Link>
       </aside>
